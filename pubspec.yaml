@@ -1,0 +1,72 @@
+name: filesharepro
+description: "Hybrid Secure File Sharing + WhatsApp Status Saver"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # File Operations
+  file_picker: ^8.1.2
+  path_provider: ^2.1.4
+  share_plus: ^10.0.0
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Contacts
+  flutter_contacts: ^1.1.9+2
+
+  # Media & Picker
+  image_picker: ^1.1.2
+  record: ^5.0.5
+  audioplayers: ^5.2.1
+  url_launcher: ^6.2.6
+  flutter_linkify: ^6.0.0
+
+  # QR Code (Serverless Signaling)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
+
+  # UI & Animations
+  lottie: ^3.1.2
+  shimmer: ^3.0.0
+  google_fonts: ^6.2.1
+
+  # Storage (No DB!)
+  shared_preferences: ^2.3.2
+
+  # Media
+  video_player: ^2.9.1
+
+  # Encryption
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  crypto: ^3.0.5
+
+  # Utilities
+  uuid: ^4.5.0
+  intl: ^0.19.0
+  connectivity_plus: ^6.0.5
+  mime: ^2.0.0
+
+  # WebRTC (P2P Long-Distance Transfer)
+  flutter_webrtc: ^0.12.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/animations/
+    - assets/icons/
