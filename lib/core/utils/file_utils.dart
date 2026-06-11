@@ -62,15 +62,35 @@ class FileUtils {
 
   /// Get vault directory (hidden with .nomedia)
   static Future<Directory> getVaultDir() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final vaultDir = Directory('${dir.path}/.secure_vault');
-    if (!await vaultDir.exists()) {
-      await vaultDir.create(recursive: true);
+    // Save to public external storage so it survives app uninstall
+    Directory? extDir;
+    if (Platform.isAndroid) {
+      extDir = await getExternalStorageDirectory();
+      // Go up to public directory if possible, or use standard Documents
+      // For FileSharePro, we create a folder in Documents
+      final docDir = Directory('/storage/emulated/0/Documents/.FileShareVault');
+      if (!await docDir.exists()) {
+        try {
+          await docDir.create(recursive: true);
+        } catch (e) {
+          // Fallback to app-specific external if permission denied
+          extDir = await getExternalStorageDirectory();
+        }
+      }
+      extDir = docDir.existsSync() ? docDir : extDir;
+    } else {
+      extDir = await getApplicationDocumentsDirectory();
+    }
+    
+    final vaultDir = extDir ?? await getApplicationDocumentsDirectory();
+    final finalDir = Directory('${vaultDir.path}/.secure_vault');
+    if (!await finalDir.exists()) {
+      await finalDir.create(recursive: true);
       // Create .nomedia to hide from gallery
-      final nomedia = File('${vaultDir.path}/.nomedia');
+      final nomedia = File('${finalDir.path}/.nomedia');
       await nomedia.create();
     }
-    return vaultDir;
+    return finalDir;
   }
 
   /// Get saved statuses directory

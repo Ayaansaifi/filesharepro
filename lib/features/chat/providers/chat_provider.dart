@@ -129,12 +129,16 @@ class ActiveChatNotifier extends StateNotifier<ActiveChatState> {
     _service.onError = (err) {
       state = state.copyWith(error: err);
     };
+    _service.onTypingChange = (typing) {
+      state = state.copyWith(isTyping: typing);
+    };
   }
 
   void _handleIncomingMessage(ChatMessage message) {
     state = state.copyWith(
       messages: [...state.messages, message],
       sendProgress: 0,
+      isTyping: false,
     );
   }
 
@@ -170,6 +174,14 @@ class ActiveChatNotifier extends StateNotifier<ActiveChatState> {
     }
   }
 
+  void setTyping(bool typing) {
+    state = state.copyWith(isTyping: typing);
+  }
+
+  void sendTypingStatus(bool isTyping) {
+    _service.sendTypingStatus(isTyping);
+  }
+
   void clearChat() {
     state = ActiveChatState.initial();
   }
@@ -183,6 +195,7 @@ class ActiveChatState {
   final double sendProgress;
   final String? statusMessage;
   final String? error;
+  final bool isTyping;
 
   const ActiveChatState({
     this.roomCode,
@@ -192,6 +205,7 @@ class ActiveChatState {
     required this.sendProgress,
     this.statusMessage,
     this.error,
+    this.isTyping = false,
   });
 
   factory ActiveChatState.initial() => const ActiveChatState(
@@ -199,6 +213,7 @@ class ActiveChatState {
         isConnected: false,
         isSending: false,
         sendProgress: 0,
+        isTyping: false,
       );
 
   ActiveChatState copyWith({
@@ -209,6 +224,7 @@ class ActiveChatState {
     double? sendProgress,
     String? statusMessage,
     String? error,
+    bool? isTyping,
   }) {
     return ActiveChatState(
       roomCode: roomCode ?? this.roomCode,
@@ -218,6 +234,42 @@ class ActiveChatState {
       sendProgress: sendProgress ?? this.sendProgress,
       statusMessage: statusMessage ?? this.statusMessage,
       error: error ?? this.error,
+      isTyping: isTyping ?? this.isTyping,
     );
+  }
+}
+
+// ─── Blocked Users Logic ────────────────────────────────────
+
+final blockedUsersProvider = StateNotifierProvider<BlockedUsersNotifier, List<String>>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return BlockedUsersNotifier(prefs);
+});
+
+class BlockedUsersNotifier extends StateNotifier<List<String>> {
+  final SharedPreferences _prefs;
+  static const _key = 'blocked_users';
+
+  BlockedUsersNotifier(this._prefs) : super([]) {
+    _loadBlockedUsers();
+  }
+
+  void _loadBlockedUsers() {
+    final blocked = _prefs.getStringList(_key) ?? [];
+    state = blocked;
+  }
+
+  Future<void> blockUser(String userId) async {
+    if (!state.contains(userId)) {
+      final updated = [...state, userId];
+      await _prefs.setStringList(_key, updated);
+      state = updated;
+    }
+  }
+
+  Future<void> unblockUser(String userId) async {
+    final updated = state.where((id) => id != userId).toList();
+    await _prefs.setStringList(_key, updated);
+    state = updated;
   }
 }

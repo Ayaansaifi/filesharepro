@@ -16,14 +16,15 @@ class AnimatedBottomNav extends StatelessWidget {
     _NavItem(icon: Icons.swap_horiz_rounded, activeIcon: Icons.swap_horiz_rounded, label: 'Transfer'),
     _NavItem(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
     _NavItem(icon: Icons.auto_awesome_outlined, activeIcon: Icons.auto_awesome, label: 'Status'),
-    _NavItem(icon: Icons.lock_outline_rounded, activeIcon: Icons.lock_rounded, label: 'Vault'),
+    _NavItem(icon: Icons.play_circle_outline_rounded, activeIcon: Icons.play_circle_filled_rounded, label: 'Memes'),
+    _NavItem(icon: Icons.download_rounded, activeIcon: Icons.download_done_rounded, label: 'Download'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(24),
@@ -41,10 +42,12 @@ class AnimatedBottomNav extends StatelessWidget {
         children: List.generate(_items.length, (i) {
           final item = _items[i];
           final isActive = currentIndex == i;
-          return _NavButton(
-            item: item,
-            isActive: isActive,
-            onTap: () => onTap(i),
+          return Flexible(
+            child: _NavButton(
+              item: item,
+              isActive: isActive,
+              onTap: () => onTap(i),
+            ),
           );
         }),
       ),
@@ -72,7 +75,7 @@ class _NavButton extends StatelessWidget {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
-          horizontal: isActive ? 20 : 16,
+          horizontal: isActive ? 12 : 8,
           vertical: 10,
         ),
         decoration: BoxDecoration(
@@ -90,31 +93,27 @@ class _NavButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               isActive ? item.activeIcon : item.icon,
               color: isActive ? Colors.white : AppColors.textHint,
-              size: 22,
+              size: 20,
             ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              child: SizedBox(
-                width: isActive ? null : 0,
-                child: isActive
-                    ? Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Text(
-                          item.label,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+            if (isActive) ...[
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  item.label,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: Colors.white,
+                    fontSize: 11,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

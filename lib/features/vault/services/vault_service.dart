@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/encryption_util.dart';
 import '../../../core/utils/file_utils.dart';
+import 'package:gal/gal.dart';
 
 /// Vault item metadata — stored as JSON in SharedPreferences (NO DB)
 class VaultItem {
@@ -48,27 +49,125 @@ class VaultItem {
 /// Metadata stored in SharedPreferences as JSON. ZERO DATABASE.
 class VaultService {
   static const String _vaultItemsKey = 'vault_items';
+  static const String _biometricEnabledKey = 'vault_biometric_enabled';
+  static const String _biometricPinKey = 'vault_bio_pin';
+  static const String _vaultRecoveryDataKey = 'vault_recovery_data';
+
+  /// Get the persistent meta file from vault directory
+  Future<File> _getMetaFile() async {
+    final vaultDir = await FileUtils.getVaultDir();
+    return File('${vaultDir.path}/vault_meta.json');
+  }
+
+  /// Sync SharedPreferences data to persistent file
+  Future<void> _syncToPersistentMeta() async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = prefs.getString(_vaultItemsKey);
+    final salt = prefs.getString(AppConstants.keyVaultSalt);
+    final hash = prefs.getString(AppConstants.keyVaultPinHash);
+    final recovery = prefs.getString(_vaultRecoveryDataKey);
+
+    if (hash != null) {
+      final Map<String, dynamic> meta = {
+        'salt': salt,
+        'hash': hash,
+        'items': items,
+        'recovery': recovery,
+      };
+      final metaFile = await _getMetaFile();
+      await metaFile.writeAsString(jsonEncode(meta));
+    }
+  }
+
+  /// Restore SharedPreferences from persistent file if needed
+  Future<void> _restoreFromPersistentMeta() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey(AppConstants.keyVaultPinHash)) return; // Already setup
+
+    final metaFile = await _getMetaFile();
+    if (await metaFile.exists()) {
+      try {
+        final content = await metaFile.readAsString();
+        final Map<String, dynamic> meta = jsonDecode(content);
+        
+        if (meta['hash'] != null) {
+          await prefs.setString(AppConstants.keyVaultPinHash, meta['hash']);
+          await prefs.setString(AppConstants.keyVaultSalt, meta['salt']);
+          if (meta['items'] != null) await prefs.setString(_vaultItemsKey, meta['items']);
+          if (meta['recovery'] != null) await prefs.setString(_vaultRecoveryDataKey, meta['recovery']);
+        }
+      } catch (e) {
+        // Corrupted meta file
+      }
+    }
+  }
 
   /// Check if vault PIN is set up
   Future<bool> isVaultSetup() async {
+    await _restoreFromPersistentMeta();
     final prefs = await SharedPreferences.getInstance();
     return prefs.containsKey(AppConstants.keyVaultPinHash);
   }
 
+  /// Check if biometric unlock is enabled
+  Future<bool> isBiometricEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricEnabledKey) ?? false;
+  }
+
+  /// Enable/disable biometric unlock
+  Future<void> setBiometricEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_biometricEnabledKey, enabled);
+  }
+
+  /// Store PIN for biometric unlock (base64 encoded in SharedPreferences)
+  /// This is protected by the device's biometric hardware
+  Future<void> _storePinForBiometric(String pin) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = base64Encode(utf8.encode(pin));
+    await prefs.setString(_biometricPinKey, encoded);
+  }
+
+  /// Retrieve stored PIN after biometric authentication
+  Future<String?> getStoredPinForBiometric() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString(_biometricPinKey);
+    if (encoded == null) return null;
+    try {
+      return utf8.decode(base64Decode(encoded));
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Setup vault with a new PIN
-  Future<void> setupVault(String pin) async {
+  Future<void> setupVault(String pin, {String? securityAnswer}) async {
     final prefs = await SharedPreferences.getInstance();
     final salt = DateTime.now().millisecondsSinceEpoch.toString();
     final hash = EncryptionUtil.hashPin(pin, salt);
     await prefs.setString(AppConstants.keyVaultPinHash, hash);
     await prefs.setString(AppConstants.keyVaultSalt, salt);
 
+    if (securityAnswer != null && securityAnswer.isNotEmpty) {
+      final ans = securityAnswer.toLowerCase().trim();
+      final encryptedPinBytes = EncryptionUtil.encryptFileBytes(Uint8List.fromList(utf8.encode(pin)), ans);
+      await prefs.setString(_vaultRecoveryDataKey, base64Encode(encryptedPinBytes));
+    }
+
+    // Store PIN for biometric unlock
+    await _storePinForBiometric(pin);
+
     // Create vault directory with .nomedia
     await FileUtils.getVaultDir();
+    
+    // Sync to persistent meta
+    await _syncToPersistentMeta();
   }
 
   /// Verify vault PIN
   Future<bool> verifyPin(String pin) async {
+    await _restoreFromPersistentMeta();
     final prefs = await SharedPreferences.getInstance();
     final storedHash = prefs.getString(AppConstants.keyVaultPinHash);
     final salt = prefs.getString(AppConstants.keyVaultSalt);
@@ -77,9 +176,31 @@ class VaultService {
     final inputHash = EncryptionUtil.hashPin(pin, salt);
     return storedHash == inputHash;
   }
+  
+  /// Reset PIN using Security Answer
+  Future<bool> resetPinWithRecovery(String securityAnswer, String newPin) async {
+    await _restoreFromPersistentMeta();
+    final prefs = await SharedPreferences.getInstance();
+    final recoveryData = prefs.getString(_vaultRecoveryDataKey);
+    if (recoveryData == null) return false;
+    
+    try {
+      final ans = securityAnswer.toLowerCase().trim();
+      final encryptedPinBytes = base64Decode(recoveryData);
+      final decryptedPinBytes = EncryptionUtil.decryptFileBytes(encryptedPinBytes, ans);
+      
+      if (decryptedPinBytes != null) {
+        final oldPin = utf8.decode(decryptedPinBytes);
+        return await changePin(oldPin, newPin, securityAnswer: ans);
+      }
+    } catch (e) {
+      return false;
+    }
+    return false;
+  }
 
   /// Change vault PIN (requires old PIN verification)
-  Future<bool> changePin(String oldPin, String newPin) async {
+  Future<bool> changePin(String oldPin, String newPin, {String? securityAnswer}) async {
     if (!await verifyPin(oldPin)) return false;
 
     // Re-encrypt all vault files with new PIN
@@ -106,6 +227,13 @@ class VaultService {
     await prefs.setString(AppConstants.keyVaultPinHash, hash);
     await prefs.setString(AppConstants.keyVaultSalt, salt);
 
+    if (securityAnswer != null && securityAnswer.isNotEmpty) {
+      final ans = securityAnswer.toLowerCase().trim();
+      final encryptedPinBytes = EncryptionUtil.encryptFileBytes(Uint8List.fromList(utf8.encode(newPin)), ans);
+      await prefs.setString(_vaultRecoveryDataKey, base64Encode(encryptedPinBytes));
+    }
+
+    await _syncToPersistentMeta();
     return true;
   }
 
@@ -194,18 +322,60 @@ class VaultService {
     }
   }
 
-  /// Export a vault file (decrypt and save to downloads)
+  /// Export a vault file (decrypt and save to gallery/downloads)
   Future<File?> exportFromVault(VaultItem item, String pin) async {
     try {
       final decrypted = await decryptVaultFile(item, pin);
       if (decrypted == null) return null;
 
-      final downloadsDir = await getApplicationDocumentsDirectory();
-      final exportFile = File('${downloadsDir.path}/${item.originalName}');
+      final tempDir = await getTemporaryDirectory();
+      final exportFile = File('${tempDir.path}/${item.originalName}');
       await exportFile.writeAsBytes(decrypted);
+
+      if (item.fileType == 'image' || item.fileType == 'video') {
+        if (!await Gal.hasAccess()) {
+          await Gal.requestAccess();
+        }
+        if (item.fileType == 'image') {
+          await Gal.putImage(exportFile.path);
+        } else {
+          await Gal.putVideo(exportFile.path);
+        }
+      } else {
+        // Fallback for documents
+        try {
+          final downloadDir = Directory('/storage/emulated/0/Download');
+          if (await downloadDir.exists()) {
+            final docFile = File('${downloadDir.path}/${item.originalName}');
+            await docFile.writeAsBytes(decrypted);
+          }
+        } catch (_) {}
+      }
+
       return exportFile;
     } catch (e) {
+      debugPrint('Export failed: $e');
       return null;
+    }
+  }
+
+  /// Clear entire vault
+  Future<bool> clearVault() async {
+    try {
+      final vaultDir = await FileUtils.getVaultDir();
+      if (await vaultDir.exists()) {
+        await vaultDir.delete(recursive: true);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_vaultItemsKey);
+      await prefs.remove(AppConstants.keyVaultPinHash);
+      await prefs.remove(AppConstants.keyVaultSalt);
+      await prefs.remove(_vaultRecoveryDataKey);
+      await prefs.remove(_biometricEnabledKey);
+      await prefs.remove(_biometricPinKey);
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -251,5 +421,6 @@ class VaultService {
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = jsonEncode(items.map((e) => e.toJson()).toList());
     await prefs.setString(_vaultItemsKey, jsonStr);
+    await _syncToPersistentMeta();
   }
 }

@@ -3,7 +3,7 @@ class AppConstants {
 
   // ─── App Info ────────────────────────────────────────────
   static const String appName = 'FileShare Pro';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.1.0';
   static const String appPackage = 'com.filesharepro.filesharepro';
 
   // ─── WebRTC STUN Servers (Free, No Database) ────────────
@@ -13,6 +13,8 @@ class AppConstants {
     {'urls': 'stun:stun2.l.google.com:19302'},
     {'urls': 'stun:stun3.l.google.com:19302'},
     {'urls': 'stun:stun4.l.google.com:19302'},
+    {'urls': 'stun:stun.services.mozilla.com'},
+    {'urls': 'stun:stun.cloudflare.com:3478'},
   ];
 
   // ─── Transfer Settings ──────────────────────────────────
@@ -26,7 +28,7 @@ class AppConstants {
   static const int pbkdf2Iterations = 100000;
   static const int aesKeyLength = 32; // 256-bit
   static const int saltLength = 16;
-  static const int ivLength = 12;
+  static const int ivLength = 16;
   static const List<int> magicBytes = [0x56, 0x4C, 0x54, 0x46]; // "VLTF"
   static const String encryptedExtension = '.vaultfile';
 

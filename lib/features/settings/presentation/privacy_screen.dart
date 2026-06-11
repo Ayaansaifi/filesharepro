@@ -53,9 +53,14 @@ class PrivacyScreen extends StatelessWidget {
                 description: 'Used to scan QR codes for pairing devices and sending photos.',
               ),
               _buildPermissionTile(
+                icon: Icons.location_on_rounded,
+                title: 'Location',
+                description: 'Used only to discover nearby devices for Wi-Fi Direct file transfers. We do not track your location.',
+              ),
+              _buildPermissionTile(
                 icon: Icons.folder_rounded,
                 title: 'Storage',
-                description: 'Required to select files to send and to save received files.',
+                description: 'Required to select files, save received items, and access WhatsApp statuses locally.',
               ),
               _buildPermissionTile(
                 icon: Icons.contacts_rounded,

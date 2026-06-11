@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -21,9 +24,13 @@ class VaultScreen extends StatefulWidget {
 class _VaultScreenState extends State<VaultScreen>
     with SingleTickerProviderStateMixin {
   final VaultService _vaultService = VaultService();
+  final LocalAuthentication _localAuth = LocalAuthentication();
   bool _isLocked = true;
   bool _isSetup = false;
   bool _isLoading = true;
+  bool _isBiometricAvailable = false;
+  bool _isBiometricEnabled = false;
+  bool _isAddingFiles = false;
   String? _currentPin;
   List<VaultItem> _items = [];
   Map<String, dynamic> _stats = {};
@@ -36,7 +43,7 @@ class _VaultScreenState extends State<VaultScreen>
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-    _checkVaultSetup();
+    _initVault();
   }
 
   @override
@@ -45,12 +52,39 @@ class _VaultScreenState extends State<VaultScreen>
     super.dispose();
   }
 
+  Future<void> _initVault() async {
+    await _checkBiometricAvailability();
+    await _checkVaultSetup();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      final isDeviceSupported = await _localAuth.isDeviceSupported();
+      final available = await _localAuth.getAvailableBiometrics();
+      
+      setState(() {
+        _isBiometricAvailable = canCheck && isDeviceSupported && available.isNotEmpty;
+      });
+    } catch (e) {
+      debugPrint('Biometric check error: $e');
+      setState(() => _isBiometricAvailable = false);
+    }
+  }
+
   Future<void> _checkVaultSetup() async {
     final setup = await _vaultService.isVaultSetup();
+    final bioEnabled = await _vaultService.isBiometricEnabled();
     setState(() {
       _isSetup = setup;
+      _isBiometricEnabled = bioEnabled;
       _isLoading = false;
     });
+    
+    // Auto-attempt biometric if vault is setup and biometric is enabled
+    if (setup && bioEnabled && _isBiometricAvailable) {
+      _unlockWithBiometric();
+    }
   }
 
   Future<void> _loadVaultItems() async {
@@ -64,18 +98,21 @@ class _VaultScreenState extends State<VaultScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-      child: SafeArea(
-        bottom: false,
-        child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primaryCyan))
-            : !_isSetup
-                ? _buildSetupScreen()
-                : _isLocked
-                    ? _buildLockScreen()
-                    : _buildVaultContent(),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+        child: SafeArea(
+          bottom: false,
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.primaryCyan))
+              : !_isSetup
+                  ? _buildSetupScreen()
+                  : _isLocked
+                      ? _buildLockScreen()
+                      : _buildVaultContent(),
+        ),
       ),
     );
   }
@@ -117,12 +154,29 @@ class _VaultScreenState extends State<VaultScreen>
               ),
             ],
           ),
+          if (_isBiometricAvailable) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.fingerprint_rounded,
+                    color: AppColors.primaryCyan, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Fingerprint unlock available',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.primaryCyan,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  // ─── Lock Screen ─────────────────────────────────────────
+  // ─── Lock Screen with Fingerprint ────────────────────────
 
   Widget _buildLockScreen() {
     return Padding(
@@ -135,15 +189,92 @@ class _VaultScreenState extends State<VaultScreen>
           Text('Vault Locked', style: AppTypography.heading2),
           const SizedBox(height: 12),
           Text(
-            'Enter your 4-digit PIN to unlock',
+            'Enter your PIN or use fingerprint to unlock',
             style: AppTypography.bodySmall,
           ),
           const SizedBox(height: 40),
+          
+          // PIN Unlock Button
           GradientButton(
-            label: 'Unlock Vault',
-            icon: Icons.lock_open_rounded,
+            label: 'Unlock with PIN',
+            icon: Icons.dialpad_rounded,
             gradient: AppColors.vaultGradient,
             onPressed: _unlockVault,
+          ),
+          
+          // Fingerprint Unlock Button
+          if (_isBiometricAvailable && _isBiometricEnabled) ...[
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: _unlockWithBiometric,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primaryCyan.withValues(alpha: 0.2),
+                            AppColors.primaryPurple.withValues(alpha: 0.2),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: AppColors.primaryCyan.withValues(alpha: 0.5),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.fingerprint_rounded,
+                        color: AppColors.primaryCyan,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Tap to use Fingerprint',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: AppColors.primaryCyan,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          
+          // Enable biometric option (if available but not enabled)
+          if (_isBiometricAvailable && !_isBiometricEnabled) ...[
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () async {
+                // Must unlock with PIN first before enabling biometric
+                _showSnackBar('Unlock with PIN first, then enable fingerprint in settings');
+              },
+              icon: const Icon(Icons.fingerprint_rounded, 
+                  color: AppColors.textHint, size: 20),
+              label: Text(
+                'Enable Fingerprint Unlock',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textHint,
+                ),
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _forgotPin,
+            child: Text(
+              'Forgot PIN?',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.primaryCyan,
+                decoration: TextDecoration.underline,
+              ),
+            ),
           ),
         ],
       ),
@@ -160,15 +291,12 @@ class _VaultScreenState extends State<VaultScreen>
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: AppColors.vaultGradient,
-                  borderRadius: BorderRadius.circular(14),
-                ),
+              GlassCard(
+                padding: const EdgeInsets.all(10),
+                borderRadius: 14,
+                onTap: () => setState(() => _isLocked = true),
                 child: const Icon(Icons.lock_rounded,
-                    color: Colors.white, size: 22),
+                    color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -183,6 +311,21 @@ class _VaultScreenState extends State<VaultScreen>
                   ],
                 ),
               ),
+              // Fingerprint toggle
+              if (_isBiometricAvailable)
+                GlassCard(
+                  padding: const EdgeInsets.all(10),
+                  borderRadius: 14,
+                  onTap: _toggleBiometric,
+                  child: Icon(
+                    Icons.fingerprint_rounded,
+                    color: _isBiometricEnabled 
+                        ? AppColors.primaryCyan 
+                        : AppColors.textHint,
+                    size: 20,
+                  ),
+                ),
+              const SizedBox(width: 8),
               GlassCard(
                 padding: const EdgeInsets.all(10),
                 borderRadius: 14,
@@ -214,10 +357,12 @@ class _VaultScreenState extends State<VaultScreen>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: GradientButton(
-            label: 'Add Files to Vault',
-            icon: Icons.add_rounded,
+            label: _isAddingFiles ? 'Encrypting...' : 'Add Files to Vault',
+            icon: _isAddingFiles ? Icons.lock_clock_rounded : Icons.add_rounded,
             gradient: AppColors.vaultGradient,
             height: 48,
+            isLoading: _isAddingFiles,
+            enabled: !_isAddingFiles,
             onPressed: _addFilesToVault,
           ),
         ),
@@ -378,35 +523,69 @@ class _VaultScreenState extends State<VaultScreen>
       );
 
       if (confirmPin == pin) {
-        await _vaultService.setupVault(pin);
+        if (!mounted) return;
+        
+        // Security Question setup
+        final securityAnswer = await showDialog<String>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const _SecurityQuestionDialog(),
+        );
+
+        await _vaultService.setupVault(pin, securityAnswer: securityAnswer);
+        
+        // Ask if user wants to enable fingerprint
+        if (_isBiometricAvailable && mounted) {
+          final enableBio = await showDialog<bool>(
+            context: context,
+            builder: (_) => AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.fingerprint_rounded,
+                      color: AppColors.primaryCyan, size: 28),
+                  const SizedBox(width: 12),
+                  Text('Enable Fingerprint?', style: AppTypography.heading4),
+                ],
+              ),
+              content: Text(
+                'Use your fingerprint to quickly unlock the vault instead of entering PIN every time.',
+                style: AppTypography.bodySmall,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('Not Now',
+                      style: TextStyle(color: AppColors.textHint)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Enable',
+                      style: TextStyle(color: AppColors.primaryCyan)),
+                ),
+              ],
+            ),
+          );
+          
+          if (enableBio == true) {
+            await _vaultService.setBiometricEnabled(true);
+            setState(() => _isBiometricEnabled = true);
+          }
+        }
+        
         setState(() {
           _isSetup = true;
           _isLocked = false;
           _currentPin = pin;
         });
         _loadVaultItems();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('✅ Vault created successfully!'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-        }
+        _showSnackBar('✅ Vault created successfully!');
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('❌ PINs don\'t match. Try again.'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-          );
+          _showSnackBar('❌ PINs don\'t match. Try again.', isError: true);
         }
       }
     }
@@ -434,15 +613,94 @@ class _VaultScreenState extends State<VaultScreen>
       } else {
         if (mounted) {
           HapticFeedback.heavyImpact();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('❌ Wrong PIN!'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
+          _showSnackBar('❌ Wrong PIN!', isError: true);
+        }
+      }
+    }
+  }
+
+  Future<void> _forgotPin() async {
+    final answer = await showDialog<String>(
+      context: context,
+      builder: (_) => const _SecurityQuestionDialog(isRecovery: true),
+    );
+    
+    if (answer != null && answer.isNotEmpty) {
+      if (!mounted) return;
+      final newPin = await showDialog<String>(
+        context: context,
+        builder: (_) => const PinInputDialog(
+          title: 'Enter New PIN',
+          subtitle: 'Create your new 4-digit PIN',
+        ),
+      );
+      
+      if (newPin != null && newPin.length == 4) {
+        final success = await _vaultService.resetPinWithRecovery(answer, newPin);
+        if (mounted) {
+          if (success) {
+            _showSnackBar('✅ Vault PIN reset successfully!');
+          } else {
+            _showSnackBar('❌ Incorrect security answer or recovery data not found.', isError: true);
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _unlockWithBiometric() async {
+    if (!_isBiometricAvailable || !_isBiometricEnabled) return;
+    
+    try {
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Unlock your secure vault',
+      );
+      
+      if (authenticated) {
+        HapticFeedback.mediumImpact();
+        // Retrieve the stored PIN for decryption operations
+        final storedPin = await _vaultService.getStoredPinForBiometric();
+        if (storedPin != null) {
+          setState(() {
+            _isLocked = false;
+            _currentPin = storedPin;
+          });
+          _loadVaultItems();
+          _showSnackBar('🔓 Vault unlocked with fingerprint!');
+        } else {
+          _showSnackBar('Fingerprint verified but PIN not found. Use PIN to unlock.', isError: true);
+        }
+      }
+    } on PlatformException catch (e) {
+      debugPrint('Biometric error: $e');
+      if (mounted) {
+        _showSnackBar('Fingerprint failed. Use PIN instead.', isError: true);
+      }
+    }
+  }
+
+  Future<void> _toggleBiometric() async {
+    if (_isBiometricEnabled) {
+      // Disable biometric
+      await _vaultService.setBiometricEnabled(false);
+      setState(() => _isBiometricEnabled = false);
+      _showSnackBar('Fingerprint unlock disabled');
+    } else {
+      // Enable biometric — verify PIN first
+      if (_currentPin != null) {
+        try {
+          final authenticated = await _localAuth.authenticate(
+            localizedReason: 'Verify to enable fingerprint unlock',
           );
+          
+          if (authenticated) {
+            await _vaultService.setBiometricEnabled(true);
+            setState(() => _isBiometricEnabled = true);
+            _showSnackBar('✅ Fingerprint unlock enabled!');
+          }
+        } on PlatformException catch (e) {
+          debugPrint('Biometric enable error: $e');
+          _showSnackBar('Could not enable fingerprint', isError: true);
         }
       }
     }
@@ -457,28 +715,38 @@ class _VaultScreenState extends State<VaultScreen>
     );
 
     if (result != null && result.files.isNotEmpty) {
+      setState(() => _isAddingFiles = true);
+      
       int added = 0;
+      int failed = 0;
       for (final file in result.files) {
         if (file.path != null) {
-          final item = await _vaultService.addToVault(
-            File(file.path!),
-            _currentPin!,
-          );
-          if (item != null) added++;
+          try {
+            final item = await _vaultService.addToVault(
+              File(file.path!),
+              _currentPin!,
+            );
+            if (item != null) {
+              added++;
+            } else {
+              failed++;
+            }
+          } catch (e) {
+            debugPrint('Error adding file to vault: $e');
+            failed++;
+          }
         }
       }
 
+      setState(() => _isAddingFiles = false);
       _loadVaultItems();
+      
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ $added files added to vault!'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        if (failed > 0) {
+          _showSnackBar('Added $added files, $failed failed', isError: failed > added);
+        } else {
+          _showSnackBar('✅ $added files added to vault!');
+        }
       }
     }
   }
@@ -498,35 +766,38 @@ class _VaultScreenState extends State<VaultScreen>
     final decrypted = await _vaultService.decryptVaultFile(item, _currentPin!);
     if (mounted) Navigator.pop(context); // Close loading
 
-    if (decrypted != null && item.fileType == 'image') {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.memory(decrypted, fit: BoxFit.contain),
+    if (decrypted != null) {
+      if (item.fileType == 'image') {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (_) => Dialog(
+              backgroundColor: Colors.transparent,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.memory(decrypted, fit: BoxFit.contain),
+              ),
             ),
-          ),
-        );
+          );
+        }
+      } else {
+        // Open with system viewer
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File('${tempDir.path}/${item.originalName}');
+          await tempFile.writeAsBytes(decrypted);
+          
+          final result = await OpenFilex.open(tempFile.path);
+          if (result.type != ResultType.done) {
+            if (mounted) _showSnackBar('Could not open file: ${result.message}', isError: true);
+          }
+        } catch (e) {
+          if (mounted) _showSnackBar('Error opening file: $e', isError: true);
+        }
       }
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              decrypted != null
-                  ? 'File decrypted: ${item.originalName}'
-                  : '❌ Failed to decrypt',
-            ),
-            backgroundColor:
-                decrypted != null ? AppColors.success : AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        _showSnackBar('❌ Failed to decrypt', isError: true);
       }
     }
   }
@@ -576,20 +847,11 @@ class _VaultScreenState extends State<VaultScreen>
                   final exported = await _vaultService.exportFromVault(
                       item, _currentPin!);
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          exported != null
-                              ? '✅ Exported: ${item.originalName}'
-                              : '❌ Export failed',
-                        ),
-                        backgroundColor: exported != null
-                            ? AppColors.success
-                            : AppColors.error,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
+                    _showSnackBar(
+                      exported != null
+                          ? '✅ Exported: ${item.originalName}'
+                          : '❌ Export failed',
+                      isError: exported == null,
                     );
                   }
                 }
@@ -623,8 +885,15 @@ class _VaultScreenState extends State<VaultScreen>
                   ),
                 );
                 if (confirmed == true) {
-                  await _vaultService.removeFromVault(item);
-                  _loadVaultItems();
+                  final success = await _vaultService.removeFromVault(item);
+                  if (mounted) {
+                    if (success) {
+                      _showSnackBar('✅ Deleted ${item.originalName}');
+                    } else {
+                      _showSnackBar('❌ Failed to delete file', isError: true);
+                    }
+                    _loadVaultItems();
+                  }
                 }
               },
             ),
@@ -649,6 +918,18 @@ class _VaultScreenState extends State<VaultScreen>
       ),
       onTap: onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 }
@@ -691,6 +972,80 @@ class _AnimatedLockIcon extends StatelessWidget {
         ),
         child: const Icon(Icons.lock_rounded, color: Colors.white, size: 44),
       ),
+    );
+  }
+}
+
+class _SecurityQuestionDialog extends StatefulWidget {
+  final bool isRecovery;
+  const _SecurityQuestionDialog({this.isRecovery = false});
+
+  @override
+  State<_SecurityQuestionDialog> createState() => _SecurityQuestionDialogState();
+}
+
+class _SecurityQuestionDialogState extends State<_SecurityQuestionDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        widget.isRecovery ? 'Security Question' : 'Set Security Question',
+        style: AppTypography.heading4,
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.isRecovery 
+              ? 'Answer your security question to reset PIN.' 
+              : 'This will help you recover your vault if you forget your PIN.',
+            style: AppTypography.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          Text('Question: What is your childhood hero?', style: AppTypography.labelLarge.copyWith(color: AppColors.primaryCyan)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Enter your answer',
+              hintStyle: const TextStyle(color: AppColors.textHint),
+              filled: true,
+              fillColor: Colors.black12,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textHint)),
+        ),
+        TextButton(
+          onPressed: () {
+            final ans = _controller.text.trim();
+            if (ans.isNotEmpty) {
+              Navigator.pop(context, ans);
+            }
+          },
+          child: Text(widget.isRecovery ? 'Submit' : 'Save', style: const TextStyle(color: AppColors.primaryCyan)),
+        ),
+      ],
     );
   }
 }

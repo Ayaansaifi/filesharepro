@@ -5,6 +5,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/widgets/app_animated_builder.dart';
+import '../services/nearby_service.dart';
+import '../services/signaling_service.dart';
+import '../services/webrtc_service.dart';
+import '../../../core/utils/permission_utils.dart';
 
 class ReceiveScreen extends StatefulWidget {
   const ReceiveScreen({super.key});
@@ -18,6 +22,9 @@ class _ReceiveScreenState extends State<ReceiveScreen>
   String _receiveMode = 'code'; // 'code', 'qr', 'nearby'
   final _codeController = TextEditingController();
   bool _isConnecting = false;
+  String _connectionStatus = '';
+  bool _isNearbySearching = false;
+  NearbyService? _nearbyService;
   late AnimationController _pulseController;
 
   @override
@@ -195,7 +202,7 @@ class _ReceiveScreenState extends State<ReceiveScreen>
         const SizedBox(height: 24),
 
         GradientButton(
-          label: 'Connect',
+          label: _connectionStatus.isNotEmpty ? _connectionStatus : 'Connect',
           icon: Icons.link_rounded,
           gradient: AppColors.receiveGradient,
           isLoading: _isConnecting,
@@ -250,6 +257,10 @@ class _ReceiveScreenState extends State<ReceiveScreen>
   }
 
   Widget _buildNearbyWaiting() {
+    // Start discovery when this tab is shown
+    if (!_isNearbySearching) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startNearbyDiscovery());
+    }
     return Column(
       children: [
         const SizedBox(height: 40),
@@ -312,27 +323,142 @@ class _ReceiveScreenState extends State<ReceiveScreen>
 
   void _connectWithCode() {
     if (_codeController.text.length != 6) return;
-    setState(() => _isConnecting = true);
+    setState(() {
+      _isConnecting = true;
+      _connectionStatus = 'Looking up room code...';
+    });
     HapticFeedback.mediumImpact();
 
-    // TODO: Implement WebRTC connection via signaling
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _isConnecting = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Connecting to sender...'),
-            backgroundColor: AppColors.surface,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    // Use signaling service to look up and connect
+    final signaling = SignalingService();
+    final webrtc = WebRTCService();
+    
+    () async {
+      try {
+        final roomCode = _codeController.text.trim().toUpperCase();
+        setState(() => _connectionStatus = 'Connecting to $roomCode...');
+        
+        // Try to get signal data for this room
+        final signalData = await signaling.getSignalData(roomCode);
+        
+        if (signalData != null) {
+          setState(() => _connectionStatus = 'Found room! Creating connection...');
+          
+          final unpacked = signaling.unpackageSignalData(signalData);
+          if (unpacked != null) {
+            final answer = await webrtc.createAnswer(unpacked['sdp']);
+            if (answer != null) {
+              final answerData = signaling.packageSignalData(
+                type: 'answer',
+                sdp: answer,
+              );
+              await signaling.storeSignalData('${roomCode}_answer', answerData);
+              
+              setState(() => _connectionStatus = 'Connected! Waiting for files...');
+              
+              webrtc.onTransferComplete = (fileName) {
+                if (mounted) {
+                  setState(() {
+                    _isConnecting = false;
+                    _connectionStatus = '';
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✅ Received: $fileName'),
+                      backgroundColor: AppColors.success,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                }
+              };
+              
+              webrtc.onTransferProgress = (progress) {
+                if (mounted) {
+                  setState(() {
+                    _connectionStatus = 'Receiving: ${(progress * 100).toStringAsFixed(0)}%';
+                  });
+                }
+              };
+              
+              return;
+            }
+          }
+        }
+        
+        // If we get here, connection failed
+        if (mounted) {
+          setState(() {
+            _isConnecting = false;
+            _connectionStatus = '';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Room not found. Ask sender for a new code.'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
             ),
-          ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isConnecting = false;
+            _connectionStatus = '';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Connection error: $e'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+      }
+    }();
+  }
+
+  void _startNearbyDiscovery() async {
+    if (_isNearbySearching) return;
+    
+    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
+    if (!hasPerm) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permissions required for Nearby Sharing')),
         );
       }
-    });
+      return;
+    }
+    
+    _nearbyService = NearbyService();
+    setState(() => _isNearbySearching = true);
+    
+    _nearbyService!.startDiscovery(
+      onDeviceFound: (deviceInfo) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📱 Found: ${deviceInfo['name'] ?? 'Device'}'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() => _isNearbySearching = false);
+        }
+      },
+    );
   }
 }
 

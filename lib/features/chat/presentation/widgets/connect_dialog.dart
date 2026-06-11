@@ -6,6 +6,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../../core/widgets/gradient_button.dart';
 import '../../providers/chat_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Bottom sheet dialog for creating or joining a chat room
 class ConnectDialog extends ConsumerStatefulWidget {
@@ -112,20 +113,15 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
                 child: TextField(
                   controller: _codeController,
                   textAlign: TextAlign.center,
-                  style: AppTypography.heading3.copyWith(
-                    letterSpacing: 6,
-                    fontSize: 24,
-                  ),
-                  maxLength: 6,
-                  textCapitalization: TextCapitalization.characters,
+                  style: AppTypography.bodyMedium,
+                  maxLines: 3,
+                  minLines: 1,
                   decoration: InputDecoration(
-                    hintText: '------',
-                    hintStyle: AppTypography.heading3.copyWith(
+                    hintText: 'Paste connection link here...',
+                    hintStyle: AppTypography.bodySmall.copyWith(
                       color: AppColors.textHint,
-                      letterSpacing: 6,
                     ),
                     border: InputBorder.none,
-                    counterText: '',
                   ),
                 ),
               ),
@@ -161,29 +157,39 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
                         children: [
                           _buildMiniAction(
                             icon: Icons.copy_rounded,
-                            label: 'Copy',
-                            onTap: () {
-                              Clipboard.setData(
-                                  ClipboardData(text: _generatedCode!));
-                              HapticFeedback.lightImpact();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text('Code copied!'),
-                                  backgroundColor: AppColors.surface,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(12)),
-                                ),
-                              );
+                            label: 'Copy Link',
+                            onTap: () async {
+                              final signaling = ref.read(chatServiceProvider).signaling;
+                              final signalData = await signaling.getSignalData(_generatedCode!);
+                              if (signalData != null) {
+                                final link = signaling.generateQrContent(roomCode: _generatedCode!, signalData: signalData);
+                                Clipboard.setData(ClipboardData(text: link));
+                                HapticFeedback.lightImpact();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: const Text('Connection link copied! Send it via SMS/WhatsApp.'),
+                                      backgroundColor: AppColors.surface,
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  );
+                                }
+                              }
                             },
                           ),
                           const SizedBox(width: 16),
                           _buildMiniAction(
                             icon: Icons.share_rounded,
                             label: 'Share',
-                            onTap: () {
-                              // TODO: Share via share_plus
+                            onTap: () async {
+                              final signaling = ref.read(chatServiceProvider).signaling;
+                              final signalData = await signaling.getSignalData(_generatedCode!);
+                              if (signalData != null) {
+                                final link = signaling.generateQrContent(roomCode: _generatedCode!, signalData: signalData);
+                                Share.share('Join my secure FileShare Pro chat room!\n\nLink: $link');
+                              }
                             },
                           ),
                         ],
@@ -255,19 +261,27 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
   }
 
   Future<void> _joinRoom(BuildContext context) async {
-    final code = _codeController.text.trim().toUpperCase();
-    if (code.length != 6) {
+    final link = _codeController.text.trim();
+    final signaling = ref.read(chatServiceProvider).signaling;
+    final parsed = signaling.parseQrContent(link);
+    
+    if (parsed == null || parsed['roomCode'] == null || parsed['signalData'] == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Enter a 6-character room code'),
+          content: const Text('Invalid connection link pasted'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
       return;
     }
+
+    final code = parsed['roomCode']!;
+    final signalData = parsed['signalData']!;
+    
+    // Store the remote offer in local SharedPreferences so ChatService can pick it up
+    await signaling.storeSignalData(code, signalData);
 
     setState(() => _isLoading = true);
     HapticFeedback.mediumImpact();

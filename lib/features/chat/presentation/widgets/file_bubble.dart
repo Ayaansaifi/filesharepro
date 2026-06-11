@@ -2,9 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
+import 'dart:io';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/file_utils.dart';
 import '../../models/chat_message.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// WhatsApp-style file message bubble
 class FileBubble extends StatelessWidget {
@@ -261,17 +264,27 @@ class FileBubble extends StatelessWidget {
     return Icon(icon, color: Colors.white, size: 22);
   }
 
-  void _onFileTap(BuildContext context) {
+  void _onFileTap(BuildContext context) async {
     HapticFeedback.lightImpact();
-    // TODO: Open file with system viewer
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('📎 ${message.fileName ?? 'File'}'),
-        backgroundColor: AppColors.surface,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    if (message.filePath != null && File(message.filePath!).existsSync()) {
+      final uri = Uri.file(message.filePath!);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open file')));
+        }
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📎 ${message.fileName ?? 'File'} not found'),
+          backgroundColor: AppColors.surface,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   void _showFileOptions(BuildContext context) {
@@ -303,17 +316,29 @@ class FileBubble extends StatelessWidget {
             _buildOption(
               icon: Icons.open_in_new_rounded,
               label: 'Open File',
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                _onFileTap(context);
+              },
             ),
             _buildOption(
               icon: Icons.share_rounded,
               label: 'Share',
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                if (message.filePath != null) {
+                  Share.shareXFiles([XFile(message.filePath!)], text: message.fileName);
+                }
+              },
             ),
             _buildOption(
               icon: Icons.save_alt_rounded,
               label: 'Save to Gallery',
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                // Implementation requires gal or similar, skip for generic file bubble
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use share to save to specific location')));
+              },
             ),
             _buildOption(
               icon: Icons.delete_outline_rounded,

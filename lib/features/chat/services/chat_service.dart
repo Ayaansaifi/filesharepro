@@ -31,6 +31,7 @@ class ChatService {
   ValueChanged<String>? onError;
   ValueChanged<bool>? onConnectionChange;
   ValueChanged<double>? onTransferProgress;
+  ValueChanged<bool>? onTypingChange;
 
   String? _activeRoomCode;
   bool _isConnected = false;
@@ -40,9 +41,17 @@ class ChatService {
   SignalingService get signaling => _signaling;
 
   // ─── Chat Room Persistence ───────────────────────────────
+  bool _cleanupRanThisSession = false;
 
   /// Get all saved chat rooms
   Future<List<ChatRoom>> getChatRooms() async {
+    // Run 24-hour cleanup once per session (fire-and-forget but debounced)
+    if (!_cleanupRanThisSession) {
+      _cleanupRanThisSession = true;
+      // Schedule cleanup after current call completes to avoid concurrent writes
+      Future.microtask(() => cleanupExpiredChats());
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = prefs.getString(_chatRoomsKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
@@ -234,7 +243,8 @@ class ChatService {
         // final msgId = text.substring(5);
         // update message status to read in DB
       } else if (text.startsWith('TYPING:')) {
-        // Handle typing indicator
+        final isTyping = text.substring(7) == 'true';
+        onTypingChange?.call(isTyping);
       }
     };
   }
@@ -314,6 +324,12 @@ class ChatService {
     return updatedMessage;
   }
 
+  Future<void> sendTypingStatus(bool isTyping) async {
+    if (_isConnected) {
+      _webrtc.sendTextMessage('TYPING:$isTyping');
+    }
+  }
+
   // ─── Helpers ─────────────────────────────────────────────
 
   Future<Directory> _getChatFilesDir() async {
@@ -347,6 +363,74 @@ class ChatService {
   }
 
   // ─── Cleanup ─────────────────────────────────────────────
+
+  /// Automatically delete chat messages and files older than 24 hours
+  Future<void> cleanupExpiredChats() async {
+    final now = DateTime.now();
+    final expirationThreshold = const Duration(hours: 24);
+    
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString(_chatRoomsKey);
+    if (jsonStr == null || jsonStr.isEmpty) return;
+
+    try {
+      final List<dynamic> list = jsonDecode(jsonStr);
+      final rooms = list.map((e) => ChatRoom.fromJson(e as Map<String, dynamic>)).toList();
+      bool roomsUpdated = false;
+      
+      for (int i = 0; i < rooms.length; i++) {
+        final room = rooms[i];
+        final validMessages = <ChatMessage>[];
+        bool roomModified = false;
+        
+        for (final msg in room.messages) {
+          if (now.difference(msg.timestamp) < expirationThreshold) {
+            validMessages.add(msg);
+          } else {
+            // Message expired! Delete associated file if it's a file
+            if (msg.type == MessageType.file && msg.filePath != null) {
+              final file = File(msg.filePath!);
+              if (await file.exists()) {
+                try {
+                  await file.delete();
+                } catch (_) {}
+              }
+            }
+            roomModified = true;
+            roomsUpdated = true;
+          }
+        }
+        
+        if (roomModified) {
+          rooms[i] = room.copyWith(messages: validMessages);
+        }
+      }
+      
+      if (roomsUpdated) {
+        // Remove empty rooms older than 24 hours
+        rooms.removeWhere((r) => r.messages.isEmpty && now.difference(r.lastActivity) > expirationThreshold);
+        await _saveAllRooms(rooms);
+      }
+      
+      // Orphan file cleanup
+      final chatDir = await _getChatFilesDir();
+      if (await chatDir.exists()) {
+        final files = chatDir.listSync();
+        for (final file in files) {
+          if (file is File) {
+            final stat = file.statSync();
+            if (now.difference(stat.modified) > expirationThreshold) {
+              try {
+                file.deleteSync();
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Chat cleanup error: $e');
+    }
+  }
 
   Future<void> disconnect() async {
     _isConnected = false;

@@ -7,8 +7,9 @@ import 'package:pointycastle/export.dart' as pc;
 import 'package:crypto/crypto.dart';
 import '../constants/app_constants.dart';
 
-/// Military-grade AES-256-GCM file encryption with PIN-based key derivation.
-/// File format: [MAGIC(4)][SALT(16)][IV(12)][ENCRYPTED_DATA][AUTH_TAG(16)]
+/// AES-256-CTR file encryption with HMAC-SHA256 integrity verification
+/// and PIN-based key derivation (PBKDF2).
+/// File format: [MAGIC(4)][SALT(16)][IV(16)][ENCRYPTED_DATA][HMAC_TAG(32)]
 class EncryptionUtil {
   EncryptionUtil._();
 
@@ -81,9 +82,14 @@ class EncryptionUtil {
       }
 
       // Extract components
-      final salt = encryptedData.sublist(4, 4 + AppConstants.saltLength);
-      final iv = encryptedData.sublist(20, 20 + AppConstants.ivLength);
-      final cipherText = encryptedData.sublist(32, encryptedData.length - 32);
+      final saltStart = 4;
+      final salt = encryptedData.sublist(saltStart, saltStart + AppConstants.saltLength);
+      
+      final ivStart = saltStart + AppConstants.saltLength;
+      final iv = encryptedData.sublist(ivStart, ivStart + AppConstants.ivLength);
+      
+      final dataStart = ivStart + AppConstants.ivLength;
+      final cipherText = encryptedData.sublist(dataStart, encryptedData.length - 32);
       final storedTag = encryptedData.sublist(encryptedData.length - 32);
 
       // Verify HMAC first (authenticate before decrypt)

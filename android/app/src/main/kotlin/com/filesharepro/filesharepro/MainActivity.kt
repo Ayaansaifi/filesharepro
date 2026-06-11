@@ -5,18 +5,22 @@ import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.view.WindowManager
 import androidx.documentfile.provider.DocumentFile
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val STATUS_CHANNEL = "com.filesharepro/status_saver"
+    private val SECURITY_CHANNEL = "com.filesharepro/security"
+    private val DEVICE_INFO_CHANNEL = "com.filesharepro/device_info"
     private val SAF_REQUEST_CODE = 1001
 
     private var pendingResult: MethodChannel.Result? = null
@@ -48,6 +52,31 @@ class MainActivity : FlutterActivity() {
                         } else {
                             result.error("INVALID_PATH", "Path is null", null)
                         }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURITY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enableSecureMode" -> {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        result.success(true)
+                    }
+                    "disableSecureMode" -> {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DEVICE_INFO_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getSdkVersion" -> {
+                        result.success(Build.VERSION.SDK_INT)
                     }
                     else -> result.notImplemented()
                 }
@@ -96,7 +125,13 @@ class MainActivity : FlutterActivity() {
     private fun getStatusesFromSaf(treeUri: Uri): List<String> {
         val statusFiles = mutableListOf<String>()
         val cacheDir = File(cacheDir, "statuses")
-        if (!cacheDir.exists()) cacheDir.mkdirs()
+        
+        // Clear old cache to prevent stale/duplicate statuses
+        if (cacheDir.exists()) {
+            cacheDir.listFiles()?.forEach { it.delete() }
+        } else {
+            cacheDir.mkdirs()
+        }
 
         try {
             val documentFile = DocumentFile.fromTreeUri(this, treeUri)

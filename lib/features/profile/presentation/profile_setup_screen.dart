@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../core/theme/app_colors.dart';
@@ -12,18 +12,39 @@ import '../../chat/providers/chat_provider.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
   final void Function(BuildContext context) onComplete;
+  final UserProfile? existingProfile;
 
-  const ProfileSetupScreen({super.key, required this.onComplete});
+  const ProfileSetupScreen({super.key, required this.onComplete, this.existingProfile});
 
   @override
   ConsumerState<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
 }
 
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _aboutController = TextEditingController(text: 'Available');
+  late TextEditingController _nameController;
+  late TextEditingController _aboutController;
   File? _avatarFile;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.existingProfile?.displayName ?? '');
+    _aboutController = TextEditingController(text: widget.existingProfile?.about ?? 'Available');
+    if (widget.existingProfile?.avatarPath != null && !kIsWeb) {
+      final file = File(widget.existingProfile!.avatarPath!);
+      if (file.existsSync()) {
+        _avatarFile = file;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _aboutController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
@@ -103,9 +124,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             width: 60,
             height: 60,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               shape: BoxShape.circle,
-              border: Border.all(color: color.withOpacity(0.3)),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
             ),
             child: Icon(icon, color: color, size: 28),
           ),
@@ -127,27 +148,37 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
     setState(() => _isLoading = true);
 
-    String? savedAvatarPath;
-    if (_avatarFile != null) {
-      final dir = await getApplicationDocumentsDirectory();
-      final targetPath = '${dir.path}/profile_avatar.jpg';
-      await _avatarFile!.copy(targetPath);
-      savedAvatarPath = targetPath;
+    try {
+      String? savedAvatarPath;
+      if (_avatarFile != null && !kIsWeb) {
+        final dir = await getApplicationDocumentsDirectory();
+        final targetPath = '${dir.path}/profile_avatar.jpg';
+        await _avatarFile!.copy(targetPath);
+        savedAvatarPath = targetPath;
+      }
+
+      final profile = UserProfile(
+        uniqueId: widget.existingProfile?.uniqueId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        displayName: name,
+        about: _aboutController.text.trim(),
+        avatarPath: savedAvatarPath,
+        createdAt: widget.existingProfile?.createdAt ?? DateTime.now(),
+      );
+
+      final contactsService = ref.read(contactsServiceProvider);
+      await contactsService.saveMyProfile(profile);
+
+      if (!mounted) return;
+      ref.invalidate(myProfileProvider); // Safely invalidate here using our own mounted ref
+      setState(() => _isLoading = false);
+      widget.onComplete(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving profile: $e')),
+      );
     }
-
-    final profile = UserProfile(
-      uniqueId: DateTime.now().millisecondsSinceEpoch.toString(),
-      displayName: name,
-      about: _aboutController.text.trim(),
-      avatarPath: savedAvatarPath,
-      createdAt: DateTime.now(),
-    );
-
-    final contactsService = ref.read(contactsServiceProvider);
-    await contactsService.saveMyProfile(profile);
-
-    setState(() => _isLoading = false);
-    widget.onComplete(context);
   }
 
   @override
@@ -181,25 +212,25 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppColors.surfaceLight,
-                      image: _avatarFile != null
+                      image: _avatarFile != null && !kIsWeb
                           ? DecorationImage(
                               image: FileImage(_avatarFile!),
                               fit: BoxFit.cover,
                             )
                           : null,
                       border: Border.all(
-                        color: AppColors.primaryCyan.withOpacity(0.3),
+                        color: AppColors.primaryCyan.withValues(alpha: 0.3),
                         width: 2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.primaryCyan.withOpacity(0.1),
+                          color: AppColors.primaryCyan.withValues(alpha: 0.1),
                           blurRadius: 20,
                           spreadRadius: 5,
                         ),
                       ],
                     ),
-                    child: _avatarFile == null
+                    child: (_avatarFile == null || kIsWeb)
                         ? const Center(
                             child: Icon(Icons.add_a_photo_rounded,
                                 color: AppColors.primaryCyan, size: 40),
@@ -242,6 +273,17 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                   ),
                 ),
                 const SizedBox(height: 60),
+
+                // EULA / Terms of Service Agreement for UGC
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'By continuing, you agree to our Terms of Service and Privacy Policy, and agree not to share or upload objectionable content.',
+                    style: AppTypography.caption.copyWith(color: AppColors.textHint, fontSize: 10, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // Next Button
                 SizedBox(

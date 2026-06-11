@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../chat/providers/chat_provider.dart';
@@ -64,7 +64,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
     } else if (profile == null) {
       nextScreen = ProfileSetupScreen(
         onComplete: (ctx) {
-          ref.invalidate(myProfileProvider);
           Navigator.pushReplacement(
             ctx,
             MaterialPageRoute(builder: (_) => const AppNavigation()),

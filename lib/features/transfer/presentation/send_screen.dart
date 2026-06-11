@@ -1,3 +1,4 @@
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/utils/file_utils.dart';
+import '../../../core/utils/permission_utils.dart';
+import '../services/nearby_service.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'widgets/pin_input_dialog.dart';
 
@@ -28,14 +33,33 @@ class _SendScreenState extends State<SendScreen>
   bool _isGeneratingLink = false;
   String? _roomCode;
   late AnimationController _fadeController;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _loadDefaultSettings();
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
     )..forward();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  Future<void> _loadDefaultSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _encryptEnabled = prefs.getBool('always_encrypt') ?? false;
+        final mode = prefs.getString('transfer_mode') ?? 'Nearby (Wi-Fi Direct)';
+        _transferMode = mode == 'Nearby (Wi-Fi Direct)' 
+            ? 'nearby' 
+            : 'longdistance';
+        
+        // Sync tab selection with default transfer mode
+        _tabController.index = _transferMode == 'nearby' ? 0 : 1;
+      });
+    }
   }
 
   @override
@@ -492,20 +516,63 @@ class _SendScreenState extends State<SendScreen>
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.any,
+      initialDirectory: '/storage/emulated/0/',
     );
     if (result != null) {
       setState(() => _selectedFiles = result.files);
     }
   }
 
-  void _startNearbySearch() {
+  void _startNearbySearch() async {
     HapticFeedback.mediumImpact();
-    // TODO: Integrate Wi-Fi Direct discovery
+    
+    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
+    if (!hasPerm) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permissions required for Nearby Sharing')),
+        );
+      }
+      return;
+    }
+    
+    // Start nearby hosting so receiver can discover us
+    final nearbyService = NearbyService();
+    nearbyService.startHosting(
+      deviceName: 'FileShare Pro',
+      onDeviceConnected: (deviceInfo) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Connected to ${deviceInfo['name'] ?? 'Device'}'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      },
+      onError: (error) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ $error'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      },
+    );
+    
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Searching for nearby devices...'),
+        content: const Text('📡 Broadcasting... Waiting for receiver to connect'),
         backgroundColor: AppColors.surface,
         behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -516,12 +583,12 @@ class _SendScreenState extends State<SendScreen>
   void _generateRoomCode() {
     setState(() => _isGeneratingLink = true);
 
-    // Generate 6-character room code
+    // Generate 6-character room code using cryptographic randomness
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final random = Random.secure();
     final code = String.fromCharCodes(
       List.generate(6, (_) {
-        final index = DateTime.now().microsecond % chars.length;
-        return chars.codeUnitAt(index);
+        return chars.codeUnitAt(random.nextInt(chars.length));
       }),
     );
 
@@ -539,8 +606,10 @@ class _SendScreenState extends State<SendScreen>
     final message = '🔗 FileShare Pro\n\n'
         'I want to send you files securely!\n'
         '📥 Code: $_roomCode\n\n'
-        'Open FileShare Pro app → Receive → Enter this code';
+        'Open FileShare Pro app → Receive → Enter this code\n\n'
+        'Don\'t have the app? Download here:\n'
+        'https://play.google.com/store/apps/details?id=com.fileshare.pro';
 
-    Share.share(message);
+    Share.share(message, subject: 'FileShare Pro Invite');
   }
 }

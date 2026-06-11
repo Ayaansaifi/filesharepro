@@ -17,11 +17,12 @@ class ContactsService {
   /// Request permissions and load all phone contacts
   Future<List<AppContact>> getPhoneContacts() async {
     if (!kIsWeb) {
-      if (await Permission.contacts.request().isGranted) {
-        final contacts = await FlutterContacts.getContacts(
-            withProperties: true, withPhoto: false);
-        return contacts.map((c) => AppContact.fromFlutterContact(c)).toList();
+      if (!await Permission.contacts.status.isGranted) {
+        throw Exception('permission_denied');
       }
+      final contacts = await FlutterContacts.getContacts(
+          withProperties: true, withPhoto: false);
+      return contacts.map((c) => AppContact.fromFlutterContact(c)).toList();
     }
     return [];
   }

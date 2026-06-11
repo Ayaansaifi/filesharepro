@@ -7,6 +7,7 @@ import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/app_animated_builder.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../chat/presentation/chat_list_screen.dart';
+import '../../vault/presentation/vault_screen.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
 
@@ -69,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       child: SafeArea(
         bottom: false,
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,71 +80,59 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 32),
 
               // ─── Send & Receive Cards ────────────────
-              Expanded(
-                child: Column(
-                  children: [
-                    // Send Card
-                    Expanded(
-                      child: AppAnimatedBuilder(
-                        listenable: _sendCardAnim,
-                        builder: (context, child) {
-                          return Transform.translate(
-                            offset: Offset(0, 30 * (1 - _sendCardAnim.value)),
-                            child: Opacity(
-                              opacity: _sendCardAnim.value.clamp(0.0, 1.0),
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: _buildActionCard(
-                          title: 'Send Files',
-                          subtitle: 'Share files securely with encryption',
-                          icon: Icons.upload_rounded,
-                          gradient: AppColors.sendGradient,
-                          features: ['🔒 PIN Encryption', '⚡ Ultra Fast', '🌐 Any Distance'],
-                          onTap: () {
-                            HapticFeedback.mediumImpact();
-                            Navigator.push(
-                              context,
-                              _createRoute(const SendScreen()),
-                            );
-                          },
-                        ),
-                      ),
+              AppAnimatedBuilder(
+                listenable: _sendCardAnim,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, 30 * (1 - _sendCardAnim.value)),
+                    child: Opacity(
+                      opacity: _sendCardAnim.value.clamp(0.0, 1.0),
+                      child: child,
                     ),
+                  );
+                },
+                child: _buildActionCard(
+                  title: 'Send Files',
+                  subtitle: 'Share files securely with encryption',
+                  icon: Icons.upload_rounded,
+                  gradient: AppColors.sendGradient,
+                  features: ['🔒 PIN Encryption', '⚡ Ultra Fast', '🌐 Any Distance'],
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.push(
+                      context,
+                      _createRoute(const SendScreen()),
+                    );
+                  },
+                ),
+              ),
 
-                    const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-                    // Receive Card
-                    Expanded(
-                      child: AppAnimatedBuilder(
-                        listenable: _receiveCardAnim,
-                        builder: (context, child) {
-                          return Transform.translate(
-                            offset: Offset(0, 30 * (1 - _receiveCardAnim.value)),
-                            child: Opacity(
-                              opacity: _receiveCardAnim.value.clamp(0.0, 1.0),
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: _buildActionCard(
-                          title: 'Receive Files',
-                          subtitle: 'Accept incoming file transfers',
-                          icon: Icons.download_rounded,
-                          gradient: AppColors.receiveGradient,
-                          features: ['📱 QR Scan', '🛡️ Verified', '📁 All Formats'],
-                          onTap: () {
-                            HapticFeedback.mediumImpact();
-                            Navigator.push(
-                              context,
-                              _createRoute(const ReceiveScreen()),
-                            );
-                          },
-                        ),
-                      ),
+              AppAnimatedBuilder(
+                listenable: _receiveCardAnim,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, 30 * (1 - _receiveCardAnim.value)),
+                    child: Opacity(
+                      opacity: _receiveCardAnim.value.clamp(0.0, 1.0),
+                      child: child,
                     ),
-                  ],
+                  );
+                },
+                child: _buildActionCard(
+                  title: 'Receive Files',
+                  subtitle: 'Accept incoming file transfers',
+                  icon: Icons.download_rounded,
+                  gradient: AppColors.receiveGradient,
+                  features: ['📱 QR Scan', '🛡️ Verified', '📁 All Formats'],
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.push(
+                      context,
+                      _createRoute(const ReceiveScreen()),
+                    );
+                  },
                 ),
               ),
 
@@ -247,18 +236,24 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('FileShare Pro', style: AppTypography.heading3),
-              Text(
-                'Secure • Fast • Encrypted',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.primaryCyan,
-                  letterSpacing: 1,
+          child: GestureDetector(
+            onLongPress: () {
+              HapticFeedback.heavyImpact();
+              Navigator.push(context, _createRoute(const VaultScreen()));
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('FileShare Pro', style: AppTypography.heading3),
+                Text(
+                  'Secure • Fast • Encrypted',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.primaryCyan,
+                    letterSpacing: 1,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         // Settings button
@@ -336,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: 24),
             // Feature chips
             Wrap(
               spacing: 8,

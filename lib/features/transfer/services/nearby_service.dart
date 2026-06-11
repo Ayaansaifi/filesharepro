@@ -29,9 +29,26 @@ class NearbyService {
 
   // ─── SENDER: Start hosting ───────────────────────────────
 
+  /// Convenience method with callbacks for UI integration
+  Future<String?> startHosting({
+    String? deviceName,
+    ValueChanged<Map<String, dynamic>>? onDeviceConnected,
+    ValueChanged<String>? onError,
+  }) async {
+    this.onError = onError;
+    onDeviceFound = (device) {
+      onDeviceConnected?.call({
+        'name': device.name,
+        'address': device.address,
+        'port': device.port,
+      });
+    };
+    return _startHostingInternal();
+  }
+
   /// Start TCP server to accept incoming file transfer connections.
   /// Returns the IP address and port for the receiver to connect to.
-  Future<String?> startHosting() async {
+  Future<String?> _startHostingInternal() async {
     try {
       // Get device IP
       final interfaces = await NetworkInterface.list(
@@ -51,7 +68,7 @@ class NearbyService {
       }
       
       if (localIp == null) {
-        onError?.call('Could not find local IP address');
+        onError?.call('Could not find local IP address. Make sure Wi-Fi is on.');
         return null;
       }
 
@@ -265,8 +282,24 @@ class NearbyService {
 
   // ─── Discovery (UDP Broadcast) ───────────────────────────
 
-  /// Broadcast presence on LAN using UDP for device discovery
+  /// Convenience method with callbacks for UI integration  
   Future<void> startDiscovery({
+    ValueChanged<Map<String, dynamic>>? onDeviceFound,
+    ValueChanged<String>? onError,
+  }) async {
+    this.onError = onError;
+    this.onDeviceFound = (device) {
+      onDeviceFound?.call({
+        'name': device.name,
+        'address': device.address,
+        'port': device.port,
+      });
+    };
+    await _startDiscoveryInternal(deviceName: 'FileShare Pro');
+  }
+
+  /// Broadcast presence on LAN using UDP for device discovery
+  Future<void> _startDiscoveryInternal({
     required String deviceName,
   }) async {
     _isDiscovering = true;
@@ -287,13 +320,18 @@ class NearbyService {
         'version': AppConstants.appVersion,
       });
       
-      // Send broadcast every 2 seconds
+      // Send broadcast every 2 seconds, auto-stop after 30 seconds
+      int elapsed = 0;
       Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (!_isDiscovering) {
+        if (!_isDiscovering || elapsed >= 30) {
           timer.cancel();
           socket.close();
+          if (elapsed >= 30) {
+            onStatusChange?.call('Discovery timed out');
+          }
           return;
         }
+        elapsed += 2;
         
         socket.send(
           utf8.encode(message),

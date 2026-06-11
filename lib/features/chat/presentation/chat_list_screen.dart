@@ -54,19 +54,25 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
 
               // ─── Chat List ──────────────────────────
               Expanded(
-                child: chatState.isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.primaryCyan))
-                    : chatState.rooms.isEmpty
-                        ? _buildEmptyState()
-                        : _buildChatList(chatState.rooms),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 90),
+                  child: chatState.isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primaryCyan))
+                      : chatState.rooms.isEmpty
+                          ? _buildEmptyState()
+                          : _buildChatList(chatState.rooms),
+                ),
               ),
             ],
           ),
         ),
       ),
-      floatingActionButton: _buildFab(context),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 90),
+        child: _buildFab(context),
+      ),
     );
   }
 
@@ -75,12 +81,15 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
         children: [
-          GlassCard(
-            padding: const EdgeInsets.all(10),
-            borderRadius: 14,
-            onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.arrow_back_ios_rounded,
-                color: Colors.white, size: 20),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.chat_bubble_rounded,
+                color: Colors.white, size: 22),
           ),
           const SizedBox(width: 16),
           Expanded(

@@ -290,8 +290,9 @@ class _TransferProgressScreenState
             icon: Icons.refresh_rounded,
             gradient: AppColors.primaryGradient,
             onPressed: () {
-              // TODO: Implement retry
+              ref.read(transferStateProvider.notifier).cancel();
               Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please start the transfer again.')));
             },
           ),
           const SizedBox(height: 12),

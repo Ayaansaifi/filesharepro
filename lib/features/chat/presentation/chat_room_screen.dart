@@ -151,12 +151,15 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      chatState.isConnected ? 'Connected' : 'Offline',
+                      chatState.isConnected 
+                          ? (chatState.isTyping ? 'typing...' : 'Connected')
+                          : 'Offline',
                       style: AppTypography.caption.copyWith(
                         color: chatState.isConnected
                             ? AppColors.success
                             : AppColors.textHint,
                         fontSize: 12,
+                        fontStyle: chatState.isTyping ? FontStyle.italic : FontStyle.normal,
                       ),
                     ),
                   ],
@@ -182,9 +185,93 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
             child: const Icon(Icons.copy_rounded,
                 color: AppColors.primaryCyan, size: 18),
           ),
+          const SizedBox(width: 8),
+          Theme(
+            data: Theme.of(context).copyWith(
+              cardColor: AppColors.surfaceLight,
+            ),
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded, color: AppColors.textPrimary),
+              onSelected: (value) => _handleMenuAction(value),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'report',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.report_problem_rounded, color: AppColors.error, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Report User', style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'block',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block_rounded, color: AppColors.error, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Block User', style: AppTypography.bodySmall.copyWith(color: AppColors.error)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _handleMenuAction(String action) async {
+    final title = action == 'report' ? 'Report User?' : 'Block User?';
+    final content = action == 'report'
+        ? 'Are you sure you want to report this user for abusive behavior or content? They will also be blocked locally.'
+        : 'Are you sure you want to block this user? You will no longer receive messages from them.';
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        content: Text(content, style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textHint)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              action == 'report' ? 'Report & Block' : 'Block',
+              style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // Execute block action
+      await ref.read(blockedUsersProvider.notifier).blockUser(widget.roomCode);
+      
+      // Also block by peerName to hide from radar
+      try {
+        final chatRooms = ref.read(chatRoomsProvider).rooms;
+        final room = chatRooms.firstWhere((r) => r.roomCode == widget.roomCode);
+        await ref.read(blockedUsersProvider.notifier).blockUser(room.peerName);
+      } catch (_) {}
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(action == 'report' ? 'User reported and blocked.' : 'User blocked.'),
+            backgroundColor: AppColors.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pop(context); // Exit chat screen
+      }
+    }
   }
 
   Widget _buildMessageList(ActiveChatState chatState) {
@@ -355,6 +442,12 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                   onChanged: (text) {
+                    final notifier = ref.read(activeChatProvider.notifier);
+                    if (text.isNotEmpty && !_isRecording) {
+                      notifier.sendTypingStatus(true);
+                    } else if (text.isEmpty) {
+                      notifier.sendTypingStatus(false);
+                    }
                     setState(() {}); // Trigger rebuild to swap mic/send icon
                   },
                 ),
@@ -421,7 +514,9 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
     final text = _textController.text.trim();
     if (text.isEmpty) return;
     
-    ref.read(activeChatProvider.notifier).sendTextMessage(text);
+    final notifier = ref.read(activeChatProvider.notifier);
+    notifier.sendTextMessage(text);
+    notifier.sendTypingStatus(false);
     _textController.clear();
     setState(() {});
   }

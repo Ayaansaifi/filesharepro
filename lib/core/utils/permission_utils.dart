@@ -1,20 +1,24 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class PermissionUtils {
   PermissionUtils._();
 
+  /// Cached SDK version to avoid repeated platform channel calls
+  static int? _cachedSdkVersion;
+
   /// Request storage permissions based on Android version
   static Future<bool> requestStoragePermission() async {
     if (Platform.isAndroid) {
-      // Android 13+ uses granular media permissions
-      final androidInfo = await _getAndroidSdkVersion();
-      if (androidInfo >= 33) {
+      final sdkVersion = await _getAndroidSdkVersion();
+      if (sdkVersion >= 33) {
+        // Android 13+ uses granular media permissions
         final photos = await Permission.photos.request();
         final videos = await Permission.videos.request();
         return photos.isGranted && videos.isGranted;
-      } else if (androidInfo >= 30) {
+      } else if (sdkVersion >= 30) {
         // Android 11-12
         final storage = await Permission.storage.request();
         return storage.isGranted;
@@ -27,11 +31,41 @@ class PermissionUtils {
   }
 
   /// Request Wi-Fi/location permissions for nearby discovery
-  static Future<bool> requestNearbyPermissions() async {
+  static Future<bool> requestNearbyPermissions(BuildContext context) async {
     if (Platform.isAndroid) {
-      final androidInfo = await _getAndroidSdkVersion();
+      // Check if location is already granted
+      final status = await Permission.locationWhenInUse.status;
+      if (!status.isGranted) {
+        // Show Prominent Disclosure before requesting location
+        if (context.mounted) {
+          final proceed = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Location Permission Needed'),
+              content: const Text(
+                'FileShare Pro collects location data to enable the discovery of nearby devices for Wi-Fi Direct file transfers, even when the app is closed or not in use.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('I Understand'),
+                ),
+              ],
+            ),
+          );
+
+          if (proceed != true) return false;
+        }
+      }
+
+      final sdkVersion = await _getAndroidSdkVersion();
       
-      if (androidInfo >= 33) {
+      if (sdkVersion >= 33) {
         final nearby = await Permission.nearbyWifiDevices.request();
         final location = await Permission.locationWhenInUse.request();
         return nearby.isGranted && location.isGranted;
@@ -85,8 +119,29 @@ class PermissionUtils {
     );
   }
 
+  /// Get actual Android SDK version via platform channel
   static Future<int> _getAndroidSdkVersion() async {
-    // Default to latest behavior
-    return 33;
+    if (_cachedSdkVersion != null) return _cachedSdkVersion!;
+    
+    if (!Platform.isAndroid) {
+      _cachedSdkVersion = 0;
+      return 0;
+    }
+    
+    try {
+      // Use MethodChannel to query Android's Build.VERSION.SDK_INT
+      const channel = MethodChannel('com.filesharepro/device_info');
+      final sdkInt = await channel.invokeMethod<int>('getSdkVersion');
+      _cachedSdkVersion = sdkInt ?? 33;
+      return _cachedSdkVersion!;
+    } on MissingPluginException {
+      // Platform channel not available — fallback to safe default
+      // Android 13 (API 33) behavior is the safest default
+      _cachedSdkVersion = 33;
+      return 33;
+    } catch (e) {
+      _cachedSdkVersion = 33;
+      return 33;
+    }
   }
 }

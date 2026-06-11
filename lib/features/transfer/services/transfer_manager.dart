@@ -198,16 +198,29 @@ class TransferManager {
         }
       }
       
-      bool success;
-      if (isNearby) {
-        success = await nearbyService.sendFile(fileToSend);
-      } else {
-        success = await webrtcService.sendFile(fileToSend);
+      int retryCount = 0;
+      bool success = false;
+      
+      while (retryCount < 3 && !success) {
+        if (isNearby) {
+          success = await nearbyService.sendFile(fileToSend);
+        } else {
+          success = await webrtcService.sendFile(fileToSend);
+        }
+        
+        if (!success) {
+          retryCount++;
+          if (retryCount < 3) {
+            _statusMessage = 'Retrying $_currentFileName ($retryCount/3)';
+            onStateChanged?.call();
+            await Future.delayed(const Duration(seconds: 1));
+          }
+        }
       }
       
       if (!success) {
         _updateState(TransferState.error, 
-            message: 'Failed to send: $_currentFileName');
+            message: 'Failed to send: $_currentFileName after 3 attempts');
         return;
       }
     }
