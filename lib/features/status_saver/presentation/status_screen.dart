@@ -17,7 +17,7 @@ class StatusScreen extends StatefulWidget {
 }
 
 class _StatusScreenState extends State<StatusScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   final StatusSaverService _statusService = StatusSaverService();
   List<File> _imageStatuses = [];
@@ -27,18 +27,29 @@ class _StatusScreenState extends State<StatusScreen>
   bool _isLoading = true;
   final Set<int> _selectedIndices = {};
   bool _isSelectionMode = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
     _checkPermissionAndLoad();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Re-check when app resumes (user might have granted SAF permission)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissionAndLoad();
+    }
   }
 
   Future<void> _checkPermissionAndLoad() async {
@@ -46,22 +57,36 @@ class _StatusScreenState extends State<StatusScreen>
     setState(() {
       _hasPermission = hasPerm;
       _isLoading = false;
+      _errorMessage = null;
     });
     if (hasPerm) _loadStatuses();
   }
 
   Future<void> _loadStatuses() async {
-    setState(() => _isLoading = true);
-    final statuses = await _statusService.getStatuses();
-    final saved = await _statusService.getSavedStatuses();
     setState(() {
-      _imageStatuses =
-          statuses.where((f) => FileUtils.isImage(f.path)).toList();
-      _videoStatuses =
-          statuses.where((f) => FileUtils.isVideo(f.path)).toList();
-      _savedStatuses = saved;
-      _isLoading = false;
+      _isLoading = true;
+      _errorMessage = null;
     });
+    try {
+      final statuses = await _statusService.getStatuses();
+      final saved = await _statusService.getSavedStatuses();
+      setState(() {
+        _imageStatuses =
+            statuses.where((f) => FileUtils.isImage(f.path)).toList();
+        _videoStatuses =
+            statuses.where((f) => FileUtils.isVideo(f.path)).toList();
+        _savedStatuses = saved;
+        _isLoading = false;
+        if (statuses.isEmpty && _hasPermission) {
+          _errorMessage = 'No statuses found. Make sure you have viewed some WhatsApp statuses recently.';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error loading statuses: $e';
+      });
+    }
   }
 
   @override

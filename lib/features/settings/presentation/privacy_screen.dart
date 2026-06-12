@@ -12,7 +12,7 @@ class PrivacyScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Privacy & Security'),
+        title: const Text('Privacy, Security & Terms'),
         backgroundColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
@@ -60,7 +60,7 @@ class PrivacyScreen extends StatelessWidget {
               _buildPermissionTile(
                 icon: Icons.folder_rounded,
                 title: 'Storage',
-                description: 'Required to select files, save received items, and access WhatsApp statuses locally.',
+                description: 'Required to select files and save received items securely. We do not support or include any unauthorized content downloading mechanisms.',
               ),
               _buildPermissionTile(
                 icon: Icons.contacts_rounded,
@@ -74,6 +74,18 @@ class PrivacyScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               
+              Text('Terms of Service', style: AppTypography.heading4),
+              const SizedBox(height: 16),
+              GlassCard(
+                padding: const EdgeInsets.all(20),
+                borderRadius: 16,
+                child: Text(
+                  'By using this app, you agree to our Terms of Service. This app provides secure file sharing and local service bookings. We have strictly removed any third-party downloading systems. You agree not to misuse the platform for sharing illegal or objectionable content. The services booked through this platform are fulfilled by independent providers.',
+                  style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary, height: 1.5),
+                ),
+              ),
+              const SizedBox(height: 32),
+              
               Center(
                 child: TextButton.icon(
                   onPressed: () async {
@@ -84,7 +96,7 @@ class PrivacyScreen extends StatelessWidget {
                     }
                   },
                   icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primaryCyan),
-                  label: Text('View Full Privacy Policy', style: AppTypography.labelMedium.copyWith(color: AppColors.primaryCyan)),
+                  label: Text('View Full Privacy & Terms', style: AppTypography.labelMedium.copyWith(color: AppColors.primaryCyan)),
                 ),
               ),
               const SizedBox(height: 40),

@@ -5,7 +5,7 @@ import '../features/transfer/presentation/home_screen.dart';
 import '../features/chat/presentation/chat_list_screen.dart';
 import '../features/status_saver/presentation/status_screen.dart';
 import '../features/entertainment/presentation/entertainment_feed_screen.dart';
-import '../features/downloader/presentation/downloader_screen.dart';
+import '../features/services/presentation/services_screen.dart';
 class AppNavigation extends ConsumerStatefulWidget {
   const AppNavigation({super.key});
 
@@ -21,7 +21,7 @@ class _AppNavigationState extends ConsumerState<AppNavigation> {
     const ChatListScreen(),
     const StatusScreen(),
     const EntertainmentFeedScreen(),
-    const DownloaderScreen(),
+    const ServicesScreen(),
   ];
 
   @override

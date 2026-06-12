@@ -516,7 +516,6 @@ class _SendScreenState extends State<SendScreen>
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.any,
-      initialDirectory: '/storage/emulated/0/',
     );
     if (result != null) {
       setState(() => _selectedFiles = result.files);

@@ -17,7 +17,7 @@ class AnimatedBottomNav extends StatelessWidget {
     _NavItem(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
     _NavItem(icon: Icons.auto_awesome_outlined, activeIcon: Icons.auto_awesome, label: 'Status'),
     _NavItem(icon: Icons.play_circle_outline_rounded, activeIcon: Icons.play_circle_filled_rounded, label: 'Memes'),
-    _NavItem(icon: Icons.download_rounded, activeIcon: Icons.download_done_rounded, label: 'Download'),
+    _NavItem(icon: Icons.home_repair_service_outlined, activeIcon: Icons.home_repair_service_rounded, label: 'Services'),
   ];
 
   @override

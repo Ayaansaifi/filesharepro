@@ -77,23 +77,33 @@ class StatusSaverService {
       final safUri = prefs.getString(AppConstants.keySafUri);
 
       if (safUri != null && safUri.isNotEmpty) {
+        debugPrint('StatusSaver: Trying SAF with URI: $safUri');
         final files = await _getStatusesViaSaf(safUri);
-        if (files.isNotEmpty) return files;
+        if (files.isNotEmpty) {
+          debugPrint('StatusSaver: Found ${files.length} statuses via SAF');
+          return files;
+        }
         
-        // SAF returned empty — might be permission revoked
-        // Try to validate
+        // SAF returned empty — might be permission revoked or wrong folder
+        debugPrint('StatusSaver: SAF returned empty, validating URI...');
         final isValid = await _validateSafUri(safUri);
         if (!isValid) {
-          // Clear invalid URI
+          // Clear invalid URI so user re-grants
           await prefs.remove(AppConstants.keySafUri);
-          debugPrint('SAF URI was invalid, cleared. User needs to re-grant.');
+          debugPrint('StatusSaver: SAF URI was invalid, cleared.');
+        } else {
+          debugPrint('StatusSaver: SAF URI valid but no statuses found (WhatsApp may have no recent statuses)');
         }
+      } else {
+        debugPrint('StatusSaver: No SAF URI stored, trying legacy...');
       }
 
       // Fallback: direct file access (Android 10 and below)
-      return await _getStatusesLegacy();
+      final legacyFiles = await _getStatusesLegacy();
+      debugPrint('StatusSaver: Found ${legacyFiles.length} statuses via legacy');
+      return legacyFiles;
     } catch (e) {
-      debugPrint('Error getting statuses: $e');
+      debugPrint('StatusSaver: Error getting statuses: $e');
       return [];
     }
   }
