@@ -192,7 +192,6 @@ class _ServicesScreenState extends State<ServicesScreen>
     );
   }
 
-  // Changed to ListView for wider cards to fit bilingual text perfectly
   Widget _buildCategoriesList() {
     final categories = _filteredCategories;
 
@@ -220,15 +219,176 @@ class _ServicesScreenState extends State<ServicesScreen>
       );
     }
 
-    return ListView.separated(
+    final iconCats = categories.where((c) => c.isIconOnly).toList();
+    final cardCats = categories.where((c) => !c.isIconOnly).toList();
+
+    return CustomScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
-      itemCount: categories.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
-      itemBuilder: (context, index) {
-        final cat = categories[index];
-        return _buildCategoryCard(cat, index);
+      slivers: [
+        if (iconCats.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _buildQuickIconsSection(iconCats),
+          ),
+        
+        if (cardCats.isNotEmpty)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _buildCategoryCard(cardCats[index], index),
+                  );
+                },
+                childCount: cardCats.length,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildQuickIconsSection(List<ServiceCategory> iconCats) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Text(
+            'Quick Services',
+            style: AppTypography.heading4.copyWith(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 16,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 110,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: iconCats.length,
+            itemBuilder: (context, index) {
+              return _buildQuickIconItem(iconCats[index], index);
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildQuickIconItem(ServiceCategory category, int index) {
+    final delay = (index * 0.05).clamp(0.0, 0.6);
+    final end = (delay + 0.4).clamp(0.0, 1.0);
+
+    final animation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: Interval(delay, end, curve: Curves.easeOutBack),
+      ),
+    );
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: animation.value.clamp(0.8, 1.0),
+          child: Opacity(
+            opacity: animation.value.clamp(0.0, 1.0),
+            child: child,
+          ),
+        );
       },
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _navigateToDetail(category);
+        },
+        child: Container(
+          width: 80,
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Hero(
+                tag: 'emoji_${category.id}',
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: category.color.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: category.color.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: category.color.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Text(
+                        category.emoji,
+                        style: const TextStyle(fontSize: 26),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Hero(
+                tag: 'name_${category.id}',
+                child: Material(
+                  color: Colors.transparent,
+                  child: Text(
+                    category.name,
+                    style: AppTypography.labelMedium.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToDetail(ServiceCategory category) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 600),
+        reverseTransitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            ServiceDetailScreen(category: category),
+        transitionsBuilder:
+            (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeInOut,
+            ),
+            child: child,
+          );
+        },
+      ),
     );
   }
 
@@ -260,25 +420,7 @@ class _ServicesScreenState extends State<ServicesScreen>
       child: GestureDetector(
         onTap: () {
           HapticFeedback.lightImpact();
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-              transitionDuration: const Duration(milliseconds: 600),
-              reverseTransitionDuration: const Duration(milliseconds: 400),
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  ServiceDetailScreen(category: category),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  ),
-                  child: child,
-                );
-              },
-            ),
-          );
+          _navigateToDetail(category);
         },
         child: Container(
           decoration: BoxDecoration(

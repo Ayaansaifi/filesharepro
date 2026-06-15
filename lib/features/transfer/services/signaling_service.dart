@@ -99,7 +99,7 @@ class SignalingService {
   Future<void> storeSignalData(String roomCode, String data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('$_keyPrefix$roomCode', data);
-    await prefs.setInt('$_keyPrefix${roomCode}_time', 
+    await prefs.setInt('${_keyPrefix}${roomCode}_time', 
         DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -113,7 +113,7 @@ class SignalingService {
   Future<void> clearSignalData(String roomCode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_keyPrefix$roomCode');
-    await prefs.remove('$_keyPrefix${roomCode}_time');
+    await prefs.remove('${_keyPrefix}${roomCode}_time');
   }
 
   /// Clean up all expired signal data (older than 1 hour)

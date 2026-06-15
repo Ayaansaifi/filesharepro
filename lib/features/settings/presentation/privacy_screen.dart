@@ -43,6 +43,12 @@ class PrivacyScreen extends StatelessWidget {
                 title: 'Local Vault',
                 description: 'Your private files are stored securely on your device, encrypted and protected by a PIN.',
               ),
+              const SizedBox(height: 16),
+              _buildFeatureTile(
+                icon: Icons.folder_shared_rounded,
+                title: 'WhatsApp Statuses',
+                description: 'The app requests access ONLY to the WhatsApp ".Statuses" folder locally on your device to let you view and save them. We never access other files or upload your data to any server.',
+              ),
               const SizedBox(height: 32),
               
               Text('Permissions', style: AppTypography.heading4),

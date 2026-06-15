@@ -569,10 +569,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen>
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.currency_rupee_rounded, color: Color(0xFF4CAF50), size: 14),
-                              const SizedBox(width: 4),
                               Text(
-                                service.priceRange.replaceAll('₹', ''), // Removed default rupee if using icon
+                                service.priceRange,
                                 style: const TextStyle(
                                   color: Color(0xFF4CAF50),
                                   fontSize: 13,

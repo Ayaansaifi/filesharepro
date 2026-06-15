@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class PermissionUtils {
@@ -11,7 +12,7 @@ class PermissionUtils {
 
   /// Request storage permissions based on Android version
   static Future<bool> requestStoragePermission() async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       final sdkVersion = await _getAndroidSdkVersion();
       if (sdkVersion >= 33) {
         // Android 13+ uses granular media permissions
@@ -32,7 +33,7 @@ class PermissionUtils {
 
   /// Request Wi-Fi/location permissions for nearby discovery
   static Future<bool> requestNearbyPermissions(BuildContext context) async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       // Check if location is already granted
       final status = await Permission.locationWhenInUse.status;
       if (!status.isGranted) {
@@ -44,7 +45,7 @@ class PermissionUtils {
             builder: (ctx) => AlertDialog(
               title: const Text('Location Permission Needed'),
               content: const Text(
-                'FileShare Pro collects location data to enable the discovery of nearby devices for Wi-Fi Direct file transfers, even when the app is closed or not in use.',
+                'FileShare Pro collects location data to enable the discovery of nearby devices for Wi-Fi Direct file transfers.',
               ),
               actions: [
                 TextButton(
@@ -123,7 +124,7 @@ class PermissionUtils {
   static Future<int> _getAndroidSdkVersion() async {
     if (_cachedSdkVersion != null) return _cachedSdkVersion!;
     
-    if (!Platform.isAndroid) {
+    if (kIsWeb || !Platform.isAndroid) {
       _cachedSdkVersion = 0;
       return 0;
     }

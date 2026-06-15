@@ -13,6 +13,7 @@ import '../../../core/utils/file_utils.dart';
 import '../../../core/widgets/app_animated_builder.dart';
 import '../../transfer/presentation/widgets/pin_input_dialog.dart';
 import '../services/vault_service.dart';
+import 'package:flutter/foundation.dart';
 
 class VaultScreen extends StatefulWidget {
   const VaultScreen({super.key});
@@ -53,6 +54,10 @@ class _VaultScreenState extends State<VaultScreen>
   }
 
   Future<void> _initVault() async {
+    if (kIsWeb) {
+      setState(() => _isLoading = false);
+      return;
+    }
     await _checkBiometricAvailability();
     await _checkVaultSetup();
   }
@@ -98,6 +103,49 @@ class _VaultScreenState extends State<VaultScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Container(
+          decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.security_rounded, size: 80, color: AppColors.textHint),
+                const SizedBox(height: 24),
+                Text('Vault Not Supported', style: AppTypography.heading2),
+                const SizedBox(height: 12),
+                Text(
+                  'The secure vault feature requires local device storage\nand is only available on Android and iOS apps.',
+                  style: AppTypography.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.surfaceLight,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(

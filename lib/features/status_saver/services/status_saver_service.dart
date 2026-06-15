@@ -14,21 +14,27 @@ class StatusSaverService {
 
   /// Check if we already have SAF permission (and it's still valid)
   Future<bool> hasPermission() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uri = prefs.getString(AppConstants.keySafUri);
-    
-    if (uri != null && uri.isNotEmpty) {
-      // Verify the persisted SAF URI is still accessible
-      final isValid = await _validateSafUri(uri);
-      if (isValid) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uri = prefs.getString(AppConstants.keySafUri);
       
-      // URI is no longer valid — clear it so user re-grants
-      await prefs.remove(AppConstants.keySafUri);
+      if (uri != null && uri.isNotEmpty) {
+        // Verify the persisted SAF URI is still accessible
+        final isValid = await _validateSafUri(uri);
+        if (isValid) return true;
+        
+        // URI is no longer valid — clear it so user re-grants
+        await prefs.remove(AppConstants.keySafUri);
+        debugPrint('StatusSaver: Cleared invalid SAF URI');
+        return false;
+      }
+      
+      // Also check legacy access
+      return await _tryLegacyAccess();
+    } catch (e) {
+      debugPrint('StatusSaver: Permission check error: $e');
       return false;
     }
-    
-    // Also check legacy access
-    return await _tryLegacyAccess();
   }
 
   /// Validate that a persisted SAF URI is still accessible
@@ -45,6 +51,9 @@ class StatusSaverService {
       return false;
     } on MissingPluginException {
       return false;
+    } catch (e) {
+      debugPrint('SAF URI validation unexpected error: $e');
+      return false;
     }
   }
 
@@ -56,6 +65,7 @@ class StatusSaverService {
       if (result != null && result.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(AppConstants.keySafUri, result);
+        debugPrint('StatusSaver: SAF permission granted, URI: $result');
         return true;
       }
       return false;
@@ -66,6 +76,9 @@ class StatusSaverService {
     } on MissingPluginException {
       debugPrint('Platform channel not available, trying legacy access');
       return _tryLegacyAccess();
+    } catch (e) {
+      debugPrint('Unexpected error requesting SAF permission: $e');
+      return false;
     }
   }
 
@@ -148,6 +161,9 @@ class StatusSaverService {
     } on MissingPluginException {
       debugPrint('Platform channel not available');
       return [];
+    } catch (e) {
+      debugPrint('Unexpected error getting SAF statuses: $e');
+      return [];
     }
   }
 
@@ -195,6 +211,12 @@ class StatusSaverService {
   /// Save a status file to the gallery/saved directory
   Future<bool> saveStatus(File statusFile) async {
     try {
+      // Validate source file
+      if (!await statusFile.exists()) {
+        debugPrint('StatusSaver: Source file does not exist: ${statusFile.path}');
+        return false;
+      }
+
       final savedDir = await FileUtils.getSavedStatusDir();
       final fileName = statusFile.path.split(Platform.pathSeparator).last;
       final destPath = '${savedDir.path}/$fileName';
@@ -234,13 +256,33 @@ class StatusSaverService {
                   (FileUtils.isImage(f.path) || FileUtils.isVideo(f.path));
             })
             .toList();
-        files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+        files.sort((a, b) {
+          try {
+            return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+          } catch (e) {
+            return 0;
+          }
+        });
         return files;
       }
     } catch (e) {
       debugPrint('Error getting saved statuses: $e');
     }
     return [];
+  }
+
+  /// Delete a saved status
+  Future<bool> deleteSavedStatus(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error deleting saved status: $e');
+      return false;
+    }
   }
 
   /// Try legacy file access (for older Android)

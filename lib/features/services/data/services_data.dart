@@ -14,6 +14,7 @@ class ServiceCategory {
   final List<SubService> subServices;
   final List<String> features;
   final String whatsappNumber;
+  final bool isIconOnly;
 
   const ServiceCategory({
     required this.id,
@@ -29,6 +30,7 @@ class ServiceCategory {
     required this.subServices,
     required this.features,
     this.whatsappNumber = '918586040076',
+    this.isIconOnly = false,
   });
 }
 
@@ -53,6 +55,125 @@ class SubService {
 class ServicesRepository {
   static List<ServiceCategory> getAllCategories() {
     return [
+      // ────────────────────────────────────────────────────────────
+      // NEW ICON CATEGORIES (isIconOnly: true)
+      // ────────────────────────────────────────────────────────────
+      ServiceCategory(
+        id: 'dj_maker',
+        name: 'DJ Maker',
+        nameHi: 'डीजे मेकर',
+        emoji: '🔊',
+        icon: Icons.speaker,
+        color: const Color(0xFFE040FB),
+        description: 'Get custom DJ setups and speaker boxes built.',
+        descriptionHi: 'कस्टम डीजे सेटअप और स्पीकर बॉक्स बनवाएं।',
+        longDescription: 'Expert manufacturing of high-quality DJ setups, wooden speaker cabinets, and complete audio systems tailored to your event requirements.',
+        longDescriptionHi: 'आपकी आवश्यकताओं के अनुसार उच्च गुणवत्ता वाले डीजे सेटअप, लकड़ी के स्पीकर कैबिनेट और संपूर्ण ऑडियो सिस्टम का विशेषज्ञ निर्माण।',
+        features: ['Heavy Bass', 'Custom Wooden Boxes', 'Top Quality'],
+        isIconOnly: true,
+        subServices: [
+          const SubService(
+            name: 'Custom DJ Setup', nameHi: 'कस्टम डीजे सेटअप',
+            description: 'Complete making of professional DJ setups with amplifiers.',
+            descriptionHi: 'एम्पलीफायर के साथ पेशेवर डीजे सेटअप का संपूर्ण निर्माण।',
+            priceRange: '₹20000+', icon: Icons.speaker,
+          ),
+          const SubService(
+            name: 'Speaker Box Fitting', nameHi: 'स्पीकर बॉक्स फिटिंग',
+            description: 'Wooden box fabrication and speaker fitting.',
+            descriptionHi: 'लकड़ी के बॉक्स का निर्माण और स्पीकर फिटिंग।',
+            priceRange: '₹5000+', icon: Icons.audiotrack,
+          ),
+        ],
+      ),
+      ServiceCategory(
+        id: 'interior',
+        name: 'Interior',
+        nameHi: 'इंटीरियर',
+        emoji: '🛋️',
+        icon: Icons.build,
+        color: const Color(0xFF009688),
+        description: 'Modern home and office interior design.',
+        descriptionHi: 'आधुनिक घर और ऑफिस का इंटीरियर डिजाइन।',
+        longDescription: 'Transform your space with our premium interior designing services. We offer false ceilings, wallpapers, modular kitchens, and complete home makeovers.',
+        longDescriptionHi: 'हमारी प्रीमियम इंटीरियर डिजाइनिंग सेवाओं के साथ अपने स्थान को बदलें। हम फॉल्स सीलिंग, वॉलपेपर, मॉड्यूलर किचन और संपूर्ण होम मेकओवर प्रदान करते हैं।',
+        features: ['3D Designs', 'Premium Quality', 'On-time Finish'],
+        isIconOnly: true,
+        subServices: [
+          const SubService(
+            name: 'False Ceiling', nameHi: 'फॉल्स सीलिंग (POP)',
+            description: 'Beautiful POP and Gypsum ceiling designs.',
+            descriptionHi: 'सुंदर पीओपी और जिप्सम छत के डिजाइन।',
+            priceRange: '₹60 - ₹120 / sq.ft', icon: Icons.home,
+          ),
+          const SubService(
+            name: 'Modular Kitchen', nameHi: 'मॉड्यूलर किचन',
+            description: 'Modern and space-saving kitchen interior.',
+            descriptionHi: 'आधुनिक और जगह बचाने वाला किचन इंटीरियर।',
+            priceRange: '₹50000+', icon: Icons.kitchen_rounded,
+          ),
+        ],
+      ),
+      ServiceCategory(
+        id: 'construction',
+        name: 'Builder',
+        nameHi: 'निर्माण कार्य',
+        emoji: '🏗️',
+        icon: Icons.build,
+        color: const Color(0xFFFF9800),
+        description: 'House building, masonry, and renovation.',
+        descriptionHi: 'मकान निर्माण, चिनाई और नवीनीकरण।',
+        longDescription: 'Reliable construction services for building your dream home. From foundation to finishing, tiling, and plastering, we handle everything with care and strength.',
+        longDescriptionHi: 'आपके सपनों का घर बनाने के लिए विश्वसनीय निर्माण सेवाएं। नींव से लेकर फिनिशिंग, टाइलिंग और पलस्तर तक, हम सब कुछ मजबूती से करते हैं।',
+        features: ['Strong Foundation', 'Quality Cement', 'Experienced Masons'],
+        isIconOnly: true,
+        subServices: [
+          const SubService(
+            name: 'House Construction', nameHi: 'मकान निर्माण (Contract)',
+            description: 'Full house building contract with material.',
+            descriptionHi: 'सामग्री के साथ पूरा घर बनाने का अनुबंध।',
+            priceRange: '₹1200 - ₹2000 / sq.ft', icon: Icons.build,
+          ),
+          const SubService(
+            name: 'Tiles & Marble Fitting', nameHi: 'टाइल्स और मार्बल फिटिंग',
+            description: 'Floor and wall tile installation.',
+            descriptionHi: 'फर्श और दीवार की टाइलें लगाना।',
+            priceRange: '₹25 - ₹60 / sq.ft', icon: Icons.grid_on,
+          ),
+        ],
+      ),
+      ServiceCategory(
+        id: 'labour',
+        name: 'Labour',
+        nameHi: 'मज़दूर / हेल्पर',
+        emoji: '👷',
+        icon: Icons.people,
+        color: const Color(0xFF607D8B),
+        description: 'Hardworking daily wage laborers and helpers.',
+        descriptionHi: 'मेहनती दिहाड़ी मज़दूर और हेल्पर।',
+        longDescription: 'Hire strong and hardworking laborers and helpers for loading, unloading, construction support, and general daily wage manual tasks.',
+        longDescriptionHi: 'लोडिंग, अनलोडिंग, निर्माण सहायता और सामान्य दिहाड़ी शारीरिक कार्यों के लिए मजबूत और मेहनती मज़दूरों और हेल्पर्स को काम पर रखें।',
+        features: ['Hardworking', 'Punctual', 'Daily Wage'],
+        isIconOnly: true,
+        subServices: [
+          const SubService(
+            name: 'Construction Labour', nameHi: 'निर्माण मज़दूर',
+            description: 'Helpers for lifting bricks, cement, and mixing.',
+            descriptionHi: 'ईंटें, सीमेंट उठाने और मिक्सिंग के लिए हेल्पर।',
+            priceRange: '₹500 - ₹800 / day', icon: Icons.build,
+          ),
+          const SubService(
+            name: 'Loading/Unloading', nameHi: 'सामान चढ़ाना/उतारना',
+            description: 'Laborers for moving heavy items and goods.',
+            descriptionHi: 'भारी सामान और माल ले जाने के लिए मज़दूर।',
+            priceRange: '₹600 - ₹1000 / day', icon: Icons.local_shipping,
+          ),
+        ],
+      ),
+
+      // ────────────────────────────────────────────────────────────
+      // EXISTING CARD CATEGORIES (isIconOnly: false)
+      // ────────────────────────────────────────────────────────────
       ServiceCategory(
         id: 'home_cleaning',
         name: 'Home Cleaning',
@@ -148,7 +269,7 @@ class ServicesRepository {
             name: 'Water Tank Install', nameHi: 'पानी की टंकी लगाना',
             description: 'New water tank fitting with proper pipe connections.',
             descriptionHi: 'उचित पाइप कनेक्शन के साथ नई पानी की टंकी की फिटिंग।',
-            priceRange: '₹800 - ₹2500', icon: Icons.propane_tank_rounded,
+            priceRange: '₹800 - ₹2500', icon: Icons.storage_rounded,
           ),
         ],
       ),
@@ -169,7 +290,7 @@ class ServicesRepository {
             name: 'Door/Window Repair', nameHi: 'दरवाजा/खिड़की मरम्मत',
             description: 'Fixing hinges, locks, and alignment issues.',
             descriptionHi: 'कब्जे, ताले और फिटिंग की समस्याओं को ठीक करना।',
-            priceRange: '₹200 - ₹800', icon: Icons.door_front_door_rounded,
+            priceRange: '₹200 - ₹800', icon: Icons.meeting_room_rounded,
           ),
           const SubService(
             name: 'Custom Wardrobe', nameHi: 'कस्टम अलमारी',
@@ -247,7 +368,7 @@ class ServicesRepository {
             name: 'Wood Polish', nameHi: 'लकड़ी की पॉलिश',
             description: 'PU, Melamine, or normal polish for doors and furniture.',
             descriptionHi: 'दरवाजों और फर्नीचर के लिए पीयू, मेलामाइन या सामान्य पॉलिश।',
-            priceRange: '₹30 - ₹80 / sq.ft', icon: Icons.chair_alt_rounded,
+            priceRange: '₹30 - ₹80 / sq.ft', icon: Icons.chair_rounded,
           ),
         ],
       ),
@@ -344,33 +465,6 @@ class ServicesRepository {
           ),
         ],
       ),
-      ServiceCategory(
-        id: 'tutor',
-        name: 'Home Tutor',
-        nameHi: 'होम ट्यूशन',
-        emoji: '📚',
-        icon: Icons.school_rounded,
-        color: const Color(0xFF3F51B5),
-        description: 'Maths, Science, English classes.',
-        descriptionHi: 'गणित, विज्ञान, अंग्रेजी की कक्षाएं।',
-        longDescription: 'Empower your child’s education with experienced home tutors. We offer personalized coaching for all school subjects, competitive exams, and spoken English right at your home.',
-        longDescriptionHi: 'अनुभवी होम ट्यूटर्स के साथ अपने बच्चे की शिक्षा को सशक्त बनाएं। हम आपके घर पर ही स्कूल के सभी विषयों, प्रतियोगी परीक्षाओं और स्पोकन इंग्लिश के लिए कोचिंग देते हैं।',
-        features: ['Expert Teachers', 'Flexible Timings', 'Demo Class'],
-        subServices: [
-          const SubService(
-            name: 'Class 1 to 10', nameHi: 'कक्षा 1 से 10',
-            description: 'All subjects tutoring including Maths, Science & English.',
-            descriptionHi: 'गणित, विज्ञान और अंग्रेजी सहित सभी विषयों की ट्यूशन।',
-            priceRange: '₹2000 - ₹5000 / month', icon: Icons.menu_book_rounded,
-          ),
-          const SubService(
-            name: 'Spoken English', nameHi: 'स्पोकन इंग्लिश',
-            description: 'Improve communication skills and grammar fluency.',
-            descriptionHi: 'संचार कौशल और व्याकरण के प्रवाह में सुधार करें।',
-            priceRange: '₹1500 - ₹3000 / month', icon: Icons.record_voice_over_rounded,
-          ),
-        ],
-      )
     ];
   }
 }

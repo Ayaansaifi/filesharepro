@@ -191,27 +191,53 @@ class _StatusScreenState extends State<StatusScreen>
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          GradientButton(
-            label: 'Grant Permission',
-            icon: Icons.folder_open_rounded,
-            gradient: AppColors.successGradient,
-            onPressed: () async {
-              final granted = await _statusService.requestPermission();
-              if (granted) {
-                setState(() => _hasPermission = true);
-                _loadStatuses();
-              } else if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Permission denied. Please select the WhatsApp .Statuses folder.'),
-                    backgroundColor: AppColors.error,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            GradientButton(
+              label: 'Grant Permission',
+              icon: Icons.folder_open_rounded,
+              gradient: AppColors.successGradient,
+              onPressed: () async {
+                final proceed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: AppColors.surface,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: Text('WhatsApp Status Access', style: AppTypography.heading3),
+                    content: Text(
+                      'FileShare Pro needs access to the WhatsApp ".Statuses" folder to display and save statuses.\n\n'
+                      'This app only accesses this specific folder locally on your device. Your media is never uploaded to any server or shared with third parties.',
+                      style: AppTypography.bodyMedium,
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel', style: TextStyle(color: AppColors.textHint)),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Proceed', style: TextStyle(color: AppColors.primaryCyan, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ),
                 );
-              }
-            },
-          ),
+
+                if (proceed == true) {
+                  final granted = await _statusService.requestPermission();
+                  if (granted) {
+                    setState(() => _hasPermission = true);
+                    _loadStatuses();
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Permission denied. Please select the WhatsApp .Statuses folder.'),
+                        backgroundColor: AppColors.error,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
           const SizedBox(height: 20),
           GlassCard(
             padding: const EdgeInsets.all(16),

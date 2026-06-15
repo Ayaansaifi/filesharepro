@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:mime/mime.dart';
+import 'package:flutter/foundation.dart';
 
 class FileUtils {
   FileUtils._();
@@ -24,7 +25,7 @@ class FileUtils {
 
   /// Get file name from path
   static String getFileName(String path) {
-    return path.split(Platform.pathSeparator).last;
+    return path.split(RegExp(r'[/\\]')).last;
   }
 
   /// Get MIME type
@@ -64,7 +65,7 @@ class FileUtils {
   static Future<Directory> getVaultDir() async {
     // Save to public external storage so it survives app uninstall
     Directory? extDir;
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       extDir = await getExternalStorageDirectory();
       // Go up to public directory if possible, or use standard Documents
       // For FileSharePro, we create a folder in Documents

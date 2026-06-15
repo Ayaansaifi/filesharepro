@@ -69,15 +69,25 @@ class TransferManager {
 
   /// Start sending files
   Future<void> startSending(List<File> files) async {
+    if (files.isEmpty) {
+      _updateState(TransferState.error, message: 'No files selected');
+      return;
+    }
+    
     _pendingFiles = files;
     _totalFiles = files.length;
     _filesSent = 0;
     _errorMessage = null;
 
-    if (_mode == TransferMode.nearby) {
-      await _startNearbySend();
-    } else {
-      await _startWebRTCSend();
+    try {
+      if (_mode == TransferMode.nearby) {
+        await _startNearbySend();
+      } else {
+        await _startWebRTCSend();
+      }
+    } catch (e) {
+      _errorMessage = e.toString();
+      _updateState(TransferState.error, message: 'Transfer failed: $e');
     }
   }
 
@@ -93,7 +103,14 @@ class TransferManager {
       _filesSent++;
       _currentFileName = name;
       _statusMessage = 'Sent: $name ($_filesSent/$_totalFiles)';
-      onStateChanged?.call();
+      
+      // Check if all files sent
+      if (_filesSent >= _totalFiles) {
+        _updateState(TransferState.completed, 
+            message: 'All $_totalFiles files sent!');
+      } else {
+        onStateChanged?.call();
+      }
     };
     
     nearbyService.onError = (err) {
@@ -107,19 +124,30 @@ class TransferManager {
     };
 
     // Start hosting and wait for connection
-    final hostAddress = await nearbyService.startHosting();
-    if (hostAddress != null) {
-      _roomCode = hostAddress;
-      _updateState(TransferState.waiting, 
-          message: 'Waiting for receiver on $hostAddress');
-      
-      nearbyService.onDeviceFound = (device) async {
+    final hostName = await nearbyService.startHosting(
+      onDeviceConnected: (deviceInfo) async {
         _updateState(TransferState.connected, 
-            message: 'Connected to ${device.name}');
+            message: 'Connected to ${deviceInfo['name']}');
+        
+        // Small delay to ensure connection is stable
+        await Future.delayed(const Duration(milliseconds: 500));
         
         // Send all files sequentially
         await _sendAllFiles(isNearby: true);
-      };
+      },
+      onError: (err) {
+        _errorMessage = err;
+        _updateState(TransferState.error, message: err);
+      },
+    );
+    
+    if (hostName != null) {
+      _roomCode = hostName;
+      _updateState(TransferState.waiting, 
+          message: 'Waiting for receiver to connect...');
+    } else {
+      _updateState(TransferState.error, 
+          message: 'Failed to start hosting. Check permissions.');
     }
   }
 
@@ -135,7 +163,13 @@ class TransferManager {
       _filesSent++;
       _currentFileName = name;
       _statusMessage = 'Sent: $name ($_filesSent/$_totalFiles)';
-      onStateChanged?.call();
+      
+      if (_filesSent >= _totalFiles) {
+        _updateState(TransferState.completed, 
+            message: 'All $_totalFiles files sent!');
+      } else {
+        onStateChanged?.call();
+      }
     };
     
     webrtcService.onError = (err) {
@@ -170,6 +204,9 @@ class TransferManager {
       await signalingService.storeSignalData(_roomCode!, signalData);
       _updateState(TransferState.waiting, 
           message: 'Share code: $_roomCode with receiver');
+    } else {
+      _updateState(TransferState.error, 
+          message: 'Failed to create WebRTC offer');
     }
   }
 
@@ -184,17 +221,28 @@ class TransferManager {
       
       File fileToSend = _pendingFiles[i];
       
+      // Validate file exists and is readable
+      if (!await fileToSend.exists()) {
+        debugPrint('File not found: ${fileToSend.path}');
+        continue; // Skip missing files
+      }
+      
       // Encrypt if needed
       if (_encryptionEnabled && _encryptionPin != null) {
         _statusMessage = 'Encrypting: $_currentFileName';
         onStateChanged?.call();
         
-        final encryptedFile = await EncryptionUtil.encryptFile(
-          fileToSend,
-          _encryptionPin!,
-        );
-        if (encryptedFile != null) {
-          fileToSend = encryptedFile;
+        try {
+          final encryptedFile = await EncryptionUtil.encryptFile(
+            fileToSend,
+            _encryptionPin!,
+          );
+          if (encryptedFile != null) {
+            fileToSend = encryptedFile;
+          }
+        } catch (e) {
+          debugPrint('Encryption failed for $_currentFileName: $e');
+          // Continue sending unencrypted
         }
       }
       
@@ -213,7 +261,7 @@ class TransferManager {
           if (retryCount < 3) {
             _statusMessage = 'Retrying $_currentFileName ($retryCount/3)';
             onStateChanged?.call();
-            await Future.delayed(const Duration(seconds: 1));
+            await Future.delayed(Duration(seconds: retryCount)); // Exponential backoff
           }
         }
       }
@@ -222,6 +270,11 @@ class TransferManager {
         _updateState(TransferState.error, 
             message: 'Failed to send: $_currentFileName after 3 attempts');
         return;
+      }
+      
+      // Small delay between files to prevent buffer overflow
+      if (i < _pendingFiles.length - 1) {
+        await Future.delayed(const Duration(milliseconds: 300));
       }
     }
     
@@ -256,10 +309,18 @@ class TransferManager {
       onStateChanged?.call();
     };
     
-    final connected = await nearbyService.connectToHost(address);
-    if (connected) {
-      _updateState(TransferState.transferring, message: 'Receiving files...');
-      await nearbyService.receiveFile();
+    try {
+      final connected = await nearbyService.connectToHost(address);
+      if (connected) {
+        _updateState(TransferState.transferring, message: 'Receiving files...');
+        await nearbyService.receiveFile();
+      } else {
+        _updateState(TransferState.error, 
+            message: 'Could not connect to sender');
+      }
+    } catch (e) {
+      _updateState(TransferState.error, 
+          message: 'Connection error: $e');
     }
   }
 
@@ -295,27 +356,38 @@ class TransferManager {
       }
     };
 
-    // Retrieve stored signal data
-    final signalData = await signalingService.getSignalData(roomCode);
-    if (signalData != null) {
-      final unpacked = signalingService.unpackageSignalData(signalData);
-      if (unpacked != null) {
-        // Create answer from offer
-        final answer = await webrtcService.createAnswer(unpacked['sdp']);
-        if (answer != null) {
-          final answerData = signalingService.packageSignalData(
-            type: 'answer',
-            sdp: answer,
-          );
-          await signalingService.storeSignalData('${roomCode}_answer', answerData);
-          
-          // Wait for file
-          await webrtcService.waitForFile();
+    try {
+      // Retrieve stored signal data
+      final signalData = await signalingService.getSignalData(roomCode);
+      if (signalData != null) {
+        final unpacked = signalingService.unpackageSignalData(signalData);
+        if (unpacked != null) {
+          // Create answer from offer
+          final answer = await webrtcService.createAnswer(unpacked['sdp']);
+          if (answer != null) {
+            final answerData = signalingService.packageSignalData(
+              type: 'answer',
+              sdp: answer,
+            );
+            await signalingService.storeSignalData('${roomCode}_answer', answerData);
+            
+            // Wait for file
+            await webrtcService.waitForFile();
+          } else {
+            _updateState(TransferState.error, 
+                message: 'Failed to create connection answer');
+          }
+        } else {
+          _updateState(TransferState.error, 
+              message: 'Invalid signal data from sender');
         }
+      } else {
+        _updateState(TransferState.error, 
+            message: 'No sender found with code: $roomCode');
       }
-    } else {
+    } catch (e) {
       _updateState(TransferState.error, 
-          message: 'No sender found with code: $roomCode');
+          message: 'Connection error: $e');
     }
   }
 

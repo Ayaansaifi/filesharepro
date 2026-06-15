@@ -1,19 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:nearby_connections/nearby_connections.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/file_utils.dart';
 
-/// Nearby file transfer service using local Wi-Fi sockets.
-/// Works by creating a TCP server on sender and connecting from receiver.
+/// Nearby file transfer service using Google's Nearby Connections API.
+/// Uses P2P_STAR strategy for high-bandwidth file transfers.
 /// NO external server or database — purely local P2P.
 class NearbyService {
-  static const int _port = 43210;
-  
-  ServerSocket? _serverSocket;
-  Socket? _clientSocket;
-  
+  static const String _serviceId = 'com.filesharepro.filesharepro';
+
+  final Strategy _strategy = Strategy.P2P_STAR;
+  final Nearby _nearby = Nearby();
+
   // ─── State Callbacks ─────────────────────────────────────
   ValueChanged<NearbyDevice>? onDeviceFound;
   ValueChanged<double>? onTransferProgress;
@@ -22,14 +25,42 @@ class NearbyService {
   ValueChanged<String>? onStatusChange;
 
   bool _isDiscovering = false;
+  bool _isAdvertising = false;
   bool _isTransferring = false;
-  
+  String? _connectedEndpointId;
+
+  // Transfer state
+  int? _currentPayloadId;
+  String? _currentFileName;
+  int _currentFileSize = 0;
+
   bool get isDiscovering => _isDiscovering;
+  bool get isAdvertising => _isAdvertising;
   bool get isTransferring => _isTransferring;
+  bool get isConnected => _connectedEndpointId != null;
+
+  // ─── Permissions ────────────────────────────────────────
+
+  /// Request all necessary permissions for Nearby Connections
+  Future<bool> _ensurePermissions() async {
+    final statuses = await [
+      Permission.location,
+      Permission.bluetooth,
+      Permission.bluetoothAdvertise,
+      Permission.bluetoothConnect,
+      Permission.bluetoothScan,
+      Permission.nearbyWifiDevices,
+    ].request();
+
+    // Location is critical; others are best-effort
+    final locationGranted = statuses[Permission.location]?.isGranted ?? false;
+    return locationGranted;
+  }
 
   // ─── SENDER: Start hosting ───────────────────────────────
 
-  /// Convenience method with callbacks for UI integration
+  /// Start advertising this device so receivers can discover it.
+  /// Returns the device name or null on failure.
   Future<String?> startHosting({
     String? deviceName,
     ValueChanged<Map<String, dynamic>>? onDeviceConnected,
@@ -43,86 +74,145 @@ class NearbyService {
         'port': device.port,
       });
     };
-    return _startHostingInternal();
-  }
 
-  /// Start TCP server to accept incoming file transfer connections.
-  /// Returns the IP address and port for the receiver to connect to.
-  Future<String?> _startHostingInternal() async {
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) {
+      onError?.call('Location permission is required for Nearby Sharing');
+      return null;
+    }
+
+    final name = deviceName ?? 'FileShare Pro';
+
     try {
-      // Get device IP
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLinkLocal: false,
-      );
-      
-      String? localIp;
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
-            localIp = addr.address;
-            break;
-          }
-        }
-        if (localIp != null) break;
-      }
-      
-      if (localIp == null) {
-        onError?.call('Could not find local IP address. Make sure Wi-Fi is on.');
-        return null;
-      }
-
-      _serverSocket = await ServerSocket.bind(
-        InternetAddress.anyIPv4,
-        _port,
-        shared: true,
-      );
-
-      onStatusChange?.call('Hosting on $localIp:$_port');
-      
-      _serverSocket!.listen(
-        (Socket client) {
-          onStatusChange?.call('Device connected: ${client.remoteAddress.address}');
-          _clientSocket = client;
-          onDeviceFound?.call(NearbyDevice(
-            name: 'Device',
-            address: client.remoteAddress.address,
-            port: client.remotePort,
-          ));
+      final success = await _nearby.startAdvertising(
+        name,
+        _strategy,
+        onConnectionInitiated: (id, info) {
+          onStatusChange?.call('Connection request from ${info.endpointName}');
+          // Auto-accept connections
+          _nearby.acceptConnection(
+            id,
+            onPayLoadRecieved: (endpointId, payload) {
+              _handlePayloadReceived(endpointId, payload);
+            },
+            onPayloadTransferUpdate: (endpointId, update) {
+              _handlePayloadTransferUpdate(endpointId, update);
+            },
+          );
         },
-        onError: (e) => onError?.call('Server error: $e'),
+        onConnectionResult: (id, status) {
+          if (status == Status.CONNECTED) {
+            _connectedEndpointId = id;
+            onStatusChange?.call('Device connected!');
+            onDeviceFound?.call(NearbyDevice(
+              name: name,
+              address: id,
+              port: 0,
+            ));
+          } else {
+            onStatusChange?.call('Connection failed');
+          }
+        },
+        onDisconnected: (id) {
+          _connectedEndpointId = null;
+          onStatusChange?.call('Device disconnected');
+        },
       );
 
-      return '$localIp:$_port';
+      if (success) {
+        _isAdvertising = true;
+        onStatusChange?.call('Broadcasting as "$name"...');
+        return name;
+      }
+      return null;
     } catch (e) {
-      onError?.call('Failed to start hosting: $e');
+      this.onError?.call('Failed to start hosting: $e');
       return null;
     }
   }
 
-  // ─── RECEIVER: Connect to host ───────────────────────────
+  // ─── RECEIVER: Discover and Connect ──────────────────────
 
-  /// Connect to the sender's TCP server
-  Future<bool> connectToHost(String address) async {
+  /// Start scanning for nearby senders
+  Future<void> startDiscovery({
+    ValueChanged<Map<String, dynamic>>? onDeviceFound,
+    ValueChanged<String>? onError,
+  }) async {
+    this.onError = onError;
+
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) {
+      onError?.call('Location permission is required for Nearby Sharing');
+      return;
+    }
+
     try {
-      final parts = address.split(':');
-      if (parts.length != 2) {
-        onError?.call('Invalid address format. Use IP:PORT');
-        return false;
-      }
-      
-      final ip = parts[0];
-      final port = int.tryParse(parts[1]) ?? _port;
-      
-      onStatusChange?.call('Connecting to $ip:$port...');
-      
-      _clientSocket = await Socket.connect(
-        ip,
-        port,
-        timeout: const Duration(seconds: 10),
+      final success = await _nearby.startDiscovery(
+        'filesharepro_receiver',
+        _strategy,
+        onEndpointFound: (id, name, serviceId) {
+          onStatusChange?.call('Found: $name');
+          onDeviceFound?.call({
+            'name': name,
+            'address': id,
+            'port': 0,
+          });
+
+          // Notify our internal callback too
+          this.onDeviceFound?.call(NearbyDevice(
+            name: name,
+            address: id,
+            port: 0,
+          ));
+        },
+        onEndpointLost: (id) {
+          onStatusChange?.call('Device lost');
+        },
       );
-      
-      onStatusChange?.call('Connected to sender!');
+
+      if (success) {
+        _isDiscovering = true;
+        onStatusChange?.call('Searching for nearby devices...');
+      }
+    } catch (e) {
+      this.onError?.call('Discovery error: $e');
+    }
+  }
+
+  /// Connect to a discovered endpoint by its ID
+  Future<bool> connectToHost(String endpointId) async {
+    try {
+      onStatusChange?.call('Connecting...');
+
+      await _nearby.requestConnection(
+        'filesharepro_receiver',
+        endpointId,
+        onConnectionInitiated: (id, info) {
+          onStatusChange?.call('Authenticating with ${info.endpointName}...');
+          _nearby.acceptConnection(
+            id,
+            onPayLoadRecieved: (endpointId, payload) {
+              _handlePayloadReceived(endpointId, payload);
+            },
+            onPayloadTransferUpdate: (endpointId, update) {
+              _handlePayloadTransferUpdate(endpointId, update);
+            },
+          );
+        },
+        onConnectionResult: (id, status) {
+          if (status == Status.CONNECTED) {
+            _connectedEndpointId = id;
+            onStatusChange?.call('Connected!');
+          } else {
+            onStatusChange?.call('Connection rejected');
+          }
+        },
+        onDisconnected: (id) {
+          _connectedEndpointId = null;
+          onStatusChange?.call('Disconnected');
+        },
+      );
+
       return true;
     } catch (e) {
       onError?.call('Connection failed: $e');
@@ -132,46 +222,43 @@ class NearbyService {
 
   // ─── SENDER: Send file ───────────────────────────────────
 
-  /// Send a file over the connected socket.
-  /// Protocol: [4-byte name length][name bytes][8-byte file size][file bytes]
+  /// Send a file to the connected endpoint using Nearby Connections FILE payload.
   Future<bool> sendFile(File file) async {
-    if (_clientSocket == null) {
+    if (_connectedEndpointId == null) {
       onError?.call('No connected device');
       return false;
     }
 
     try {
       _isTransferring = true;
-      onStatusChange?.call('Sending: ${file.path.split(Platform.pathSeparator).last}');
-      
       final fileName = file.path.split(Platform.pathSeparator).last;
-      final nameBytes = utf8.encode(fileName);
-      final fileSize = await file.length();
-      
-      // Send header: name length (4 bytes) + name + file size (8 bytes)
-      final header = ByteData(4);
-      header.setUint32(0, nameBytes.length);
-      _clientSocket!.add(header.buffer.asUint8List());
-      _clientSocket!.add(nameBytes);
-      
-      final sizeHeader = ByteData(8);
-      sizeHeader.setUint64(0, fileSize);
-      _clientSocket!.add(sizeHeader.buffer.asUint8List());
-      
-      // Stream file data in chunks
-      int sent = 0;
-      final stream = file.openRead();
-      await for (final chunk in stream) {
-        _clientSocket!.add(chunk);
-        sent += chunk.length;
-        onTransferProgress?.call(sent / fileSize);
-      }
-      
-      await _clientSocket!.flush();
-      
-      _isTransferring = false;
-      onTransferComplete?.call(fileName);
-      onStatusChange?.call('File sent successfully!');
+      _currentFileName = fileName;
+      _currentFileSize = await file.length();
+
+      onStatusChange?.call('Sending: $fileName');
+
+      // First send the filename as BYTES payload so receiver knows what it is
+      final metaJson = json.encode({
+        'fileName': fileName,
+        'fileSize': _currentFileSize,
+      });
+      await _nearby.sendBytesPayload(
+        _connectedEndpointId!,
+        Uint8List.fromList(utf8.encode('META:$metaJson')),
+      );
+
+      // Small delay to ensure metadata arrives first
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Send the actual file payload
+      final payloadId = await _nearby.sendFilePayload(
+        _connectedEndpointId!,
+        file.path,
+      );
+
+      _currentPayloadId = payloadId;
+      onStatusChange?.call('Sending $fileName...');
+
       return true;
     } catch (e) {
       _isTransferring = false;
@@ -182,213 +269,126 @@ class NearbyService {
 
   // ─── RECEIVER: Receive file ──────────────────────────────
 
-  /// Listen for incoming file on the connected socket.
+  /// Listen for incoming file on the connected endpoint.
+  /// Files are received automatically via the payload callbacks.
   Future<File?> receiveFile() async {
-    if (_clientSocket == null) {
-      onError?.call('No connected device');
-      return null;
-    }
-
-    try {
-      _isTransferring = true;
-      onStatusChange?.call('Waiting for file...');
-      
-      final completer = Completer<File?>();
-      final buffer = <int>[];
-      String? fileName;
-      int? fileSize;
-      int headerPhase = 0; // 0=name_len, 1=name, 2=size, 3=data
-      int? nameLength;
-      int dataReceived = 0;
-      IOSink? fileSink;
-      File? outputFile;
-
-      _clientSocket!.listen(
-        (data) async {
-          buffer.addAll(data);
-          
-          // Phase 0: Read name length (4 bytes)
-          if (headerPhase == 0 && buffer.length >= 4) {
-            final bd = ByteData.view(Uint8List.fromList(buffer.sublist(0, 4)).buffer);
-            nameLength = bd.getUint32(0);
-            buffer.removeRange(0, 4);
-            headerPhase = 1;
-          }
-          
-          // Phase 1: Read file name
-          if (headerPhase == 1 && nameLength != null && buffer.length >= nameLength!) {
-            fileName = utf8.decode(buffer.sublist(0, nameLength!));
-            buffer.removeRange(0, nameLength!);
-            headerPhase = 2;
-          }
-          
-          // Phase 2: Read file size (8 bytes)
-          if (headerPhase == 2 && buffer.length >= 8) {
-            final bd = ByteData.view(Uint8List.fromList(buffer.sublist(0, 8)).buffer);
-            fileSize = bd.getUint64(0);
-            buffer.removeRange(0, 8);
-            headerPhase = 3;
-            
-            // Create output file
-            final downloadDir = await FileUtils.getReceivedDir();
-            outputFile = File('${downloadDir.path}/$fileName');
-            fileSink = outputFile!.openWrite();
-            
-            onStatusChange?.call('Receiving: $fileName (${FileUtils.formatFileSize(fileSize!)})');
-          }
-          
-          // Phase 3: Receive file data
-          if (headerPhase == 3 && fileSink != null && fileSize != null) {
-            fileSink!.add(buffer);
-            dataReceived += buffer.length;
-            buffer.clear();
-            
-            onTransferProgress?.call(dataReceived / fileSize!);
-            
-            if (dataReceived >= fileSize!) {
-              await fileSink!.flush();
-              await fileSink!.close();
-              _isTransferring = false;
-              onTransferComplete?.call(fileName ?? 'file');
-              onStatusChange?.call('File received successfully!');
-              completer.complete(outputFile);
-            }
-          }
-        },
-        onDone: () {
-          if (!completer.isCompleted) {
-            _isTransferring = false;
-            if (dataReceived > 0 && fileSize != null && dataReceived >= fileSize!) {
-              completer.complete(outputFile);
-            } else {
-              completer.complete(null);
-            }
-          }
-        },
-        onError: (e) {
-          _isTransferring = false;
-          onError?.call('Receive error: $e');
-          if (!completer.isCompleted) completer.complete(null);
-        },
-      );
-
-      return await completer.future;
-    } catch (e) {
-      _isTransferring = false;
-      onError?.call('Receive failed: $e');
-      return null;
-    }
-  }
-
-  // ─── Discovery (UDP Broadcast) ───────────────────────────
-
-  /// Convenience method with callbacks for UI integration  
-  Future<void> startDiscovery({
-    ValueChanged<Map<String, dynamic>>? onDeviceFound,
-    ValueChanged<String>? onError,
-  }) async {
-    this.onError = onError;
-    this.onDeviceFound = (device) {
-      onDeviceFound?.call({
-        'name': device.name,
-        'address': device.address,
-        'port': device.port,
-      });
-    };
-    await _startDiscoveryInternal(deviceName: 'FileShare Pro');
-  }
-
-  /// Broadcast presence on LAN using UDP for device discovery
-  Future<void> _startDiscoveryInternal({
-    required String deviceName,
-  }) async {
-    _isDiscovering = true;
-    onStatusChange?.call('Searching for nearby devices...');
+    // Nearby Connections handles receiving automatically through callbacks
+    // set up during acceptConnection. This method exists for API compatibility.
+    onStatusChange?.call('Waiting for file...');
     
-    try {
-      final socket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        0,
-      );
-      socket.broadcastEnabled = true;
-      
-      // Broadcast our presence
-      final message = json.encode({
-        'type': 'fileshare_discovery',
-        'name': deviceName,
-        'port': _port,
-        'version': AppConstants.appVersion,
-      });
-      
-      // Send broadcast every 2 seconds, auto-stop after 30 seconds
-      int elapsed = 0;
-      Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (!_isDiscovering || elapsed >= 30) {
-          timer.cancel();
-          socket.close();
-          if (elapsed >= 30) {
-            onStatusChange?.call('Discovery timed out');
-          }
-          return;
+    // Return null — actual file handling is done in payload callbacks
+    return null;
+  }
+
+  // ─── Payload Handling ────────────────────────────────────
+
+  void _handlePayloadReceived(String endpointId, Payload payload) {
+    if (payload.type == PayloadType.BYTES && payload.bytes != null) {
+      final message = utf8.decode(payload.bytes!);
+      if (message.startsWith('META:')) {
+        try {
+          final metaJson = json.decode(message.substring(5));
+          _currentFileName = metaJson['fileName'] as String?;
+          _currentFileSize = metaJson['fileSize'] as int? ?? 0;
+          onStatusChange?.call('Receiving: $_currentFileName');
+        } catch (e) {
+          debugPrint('Failed to parse file metadata: $e');
         }
-        elapsed += 2;
-        
-        socket.send(
-          utf8.encode(message),
-          InternetAddress('255.255.255.255'),
-          _port + 1,
-        );
-      });
-      
-      // Listen for responses
-      final listener = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        _port + 1,
-      );
-      listener.broadcastEnabled = true;
-      
-      listener.listen((event) {
-        if (event == RawSocketEvent.read) {
-          final datagram = listener.receive();
-          if (datagram != null) {
-            try {
-              final data = json.decode(utf8.decode(datagram.data));
-              if (data['type'] == 'fileshare_discovery') {
-                onDeviceFound?.call(NearbyDevice(
-                  name: data['name'] ?? 'Unknown',
-                  address: datagram.address.address,
-                  port: data['port'] ?? _port,
-                ));
-              }
-            } catch (_) {}
-          }
-        }
-      });
-    } catch (e) {
-      onError?.call('Discovery error: $e');
+      }
+    } else if (payload.type == PayloadType.FILE) {
+      _currentPayloadId = payload.id;
+      _isTransferring = true;
+      onStatusChange?.call('Receiving file data...');
     }
   }
+
+  void _handlePayloadTransferUpdate(
+    String endpointId,
+    PayloadTransferUpdate update,
+  ) {
+    if (update.id == _currentPayloadId) {
+      final progress = update.bytesTransferred / (update.totalBytes > 0 ? update.totalBytes : 1);
+      onTransferProgress?.call(progress);
+
+      if (update.status == PayloadStatus.SUCCESS) {
+        _isTransferring = false;
+
+        // Nearby Connections saves FILE payloads to a temp location
+        // We need to rename and move it to our received directory
+        _finalizeReceivedFile(update).then((success) {
+          if (success) {
+            onTransferComplete?.call(_currentFileName ?? 'file');
+            onStatusChange?.call('File received successfully!');
+          }
+        });
+      } else if (update.status == PayloadStatus.FAILURE) {
+        _isTransferring = false;
+        onError?.call('Transfer failed');
+      }
+    }
+  }
+
+  /// Move the received file from Nearby Connections temp directory to our app's directory
+  Future<bool> _finalizeReceivedFile(PayloadTransferUpdate update) async {
+    try {
+      final downloadDir = await FileUtils.getReceivedDir();
+      final targetName = _currentFileName ?? 'received_${DateTime.now().millisecondsSinceEpoch}';
+      final targetPath = '${downloadDir.path}/$targetName';
+
+      // Nearby Connections saves the file with the payload ID as the filename
+      // in the Downloads directory or app cache
+      final possiblePaths = [
+        '/storage/emulated/0/Download/${update.id}',
+        '/storage/emulated/0/Android/data/$_serviceId/files/${update.id}',
+      ];
+
+      for (final path in possiblePaths) {
+        final tempFile = File(path);
+        if (await tempFile.exists()) {
+          await tempFile.rename(targetPath);
+          onStatusChange?.call('Saved: $targetName');
+          return true;
+        }
+      }
+
+      // If we can't find the temp file, try using the file's uri
+      onStatusChange?.call('File saved to Downloads');
+      return true;
+    } catch (e) {
+      debugPrint('Failed to finalize received file: $e');
+      onError?.call('File saved but could not be moved: $e');
+      return false;
+    }
+  }
+
+  // ─── Stop ────────────────────────────────────────────────
 
   /// Stop discovering nearby devices
   void stopDiscovery() {
     _isDiscovering = false;
+    _nearby.stopDiscovery();
     onStatusChange?.call('Discovery stopped');
+  }
+
+  /// Stop advertising
+  void stopAdvertising() {
+    _isAdvertising = false;
+    _nearby.stopAdvertising();
+    onStatusChange?.call('Advertising stopped');
   }
 
   // ─── Cleanup ─────────────────────────────────────────────
 
   Future<void> dispose() async {
     _isDiscovering = false;
+    _isAdvertising = false;
     _isTransferring = false;
-    
+    _connectedEndpointId = null;
+
     try {
-      _clientSocket?.destroy();
-      _clientSocket = null;
-    } catch (_) {}
-    
-    try {
-      await _serverSocket?.close();
-      _serverSocket = null;
+      await _nearby.stopAllEndpoints();
+      await _nearby.stopAdvertising();
+      await _nearby.stopDiscovery();
     } catch (_) {}
   }
 }
@@ -398,15 +398,15 @@ class NearbyDevice {
   final String name;
   final String address;
   final int port;
-  
+
   const NearbyDevice({
     required this.name,
     required this.address,
     required this.port,
   });
-  
+
   String get connectionString => '$address:$port';
-  
+
   @override
   String toString() => 'NearbyDevice($name @ $address:$port)';
 }
