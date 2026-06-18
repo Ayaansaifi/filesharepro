@@ -3,85 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - FileShare Pro</title>
+    <title>Privacy Policy — FileShare Pro</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0F172A; color: #CBD5E1; line-height: 1.7; padding: 0;
         }
-        h1, h2, h3 { color: #2c3e50; }
-        .header {
-            text-align: center;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
+        .hero {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            padding: 60px 20px 40px; text-align: center;
+            border-bottom: 1px solid rgba(0,242,254,0.1);
         }
-        .highlight {
-            background-color: #f8f9fa;
-            border-left: 4px solid #00c6ff;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
-        }
+        .hero h1 { color: #F1F5F9; font-size: 2.2em; margin-bottom: 8px; }
+        .hero .subtitle { color: #00F2FE; font-size: 1.1em; }
+        .hero .updated { color: #64748B; font-size: 0.9em; margin-top: 12px; }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 24px; }
+        h2 { color: #F1F5F9; font-size: 1.4em; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        h3 { color: #E2E8F0; font-size: 1.1em; margin: 20px 0 8px; }
+        p { margin-bottom: 14px; }
+        ul { margin: 8px 0 16px 24px; }
+        li { margin-bottom: 6px; }
+        .highlight { background: rgba(0,242,254,0.08); border-left: 3px solid #00F2FE; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+        .warning { background: rgba(239,68,68,0.08); border-left: 3px solid #EF4444; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+        a { color: #00F2FE; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .footer { text-align: center; padding: 40px 20px; color: #475569; font-size: 0.85em; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 40px; }
+        strong { color: #E2E8F0; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+        th, td { text-align: left; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.08); }
+        th { background: rgba(0,242,254,0.06); color: #F1F5F9; font-weight: 600; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Privacy Policy</h1>
-        <p><strong>App:</strong> FileShare Pro</p>
-        <p><strong>Effective Date:</strong> May 31, 2026</p>
-    </div>
+
+<div class="hero">
+    <h1>🔒 FileShare Pro</h1>
+    <p class="subtitle">Privacy Policy & Terms of Service</p>
+    <p class="updated">Last updated: June 18, 2026</p>
+</div>
+
+<div class="container">
+
+    <h2>1. Introduction</h2>
+    <p>FileShare Pro ("we", "us", "our") is a peer-to-peer file sharing application developed for Android. We are committed to protecting your privacy and being transparent about how our app works.</p>
 
     <div class="highlight">
-        <h3>🚀 Zero Server, Maximum Privacy</h3>
-        <p>FileShare Pro is a completely peer-to-peer (P2P) application. We do <strong>NOT</strong> collect, store, or transmit any of your personal data to our servers. Your data never leaves your device unless you explicitly share it directly with another user.</p>
+        <strong>Zero Server Architecture:</strong> FileShare Pro operates on a 100% Peer-to-Peer model. We do <strong>not</strong> operate any backend servers, databases, or cloud storage. Your files, messages, and personal data never pass through our servers because we have none.
     </div>
 
-    <h2>1. Information We Access (Device Permissions)</h2>
-    <p>To provide core functionalities, the app requests the following local device permissions. None of this data is collected by us:</p>
+    <h2>2. Information We Collect</h2>
+
+    <h3>2.1 Information You Provide</h3>
     <ul>
-        <li><strong>Camera:</strong> Used strictly for scanning QR codes to establish P2P WebRTC connections.</li>
-        <li><strong>Location:</strong> We collect location data to enable the discovery of nearby devices for Wi-Fi Direct file transfers, even when the app is closed or not in use. This data is never transmitted to our servers.</li>
-        <li><strong>Storage / Media:</strong> Accessed to allow you to select files to share, save received files, secure files in the local encrypted vault, and fetch temporary WhatsApp statuses locally.</li>
-        <li><strong>Contacts:</strong> Read locally to display your contact list for the in-app chat feature. Contact data is never uploaded to any server.</li>
-        <li><strong>Microphone:</strong> Used locally to record voice notes in the chat feature. Audio is sent directly to your peer using End-to-End Encryption.</li>
+        <li><strong>Display Name & Profile Photo:</strong> Stored locally on your device only. Not uploaded anywhere.</li>
+        <li><strong>Vault PIN:</strong> Your PIN hash is stored locally on your device using SHA-256 + PBKDF2. We cannot recover your PIN.</li>
     </ul>
 
-    <h2>2. Features and Data Usage</h2>
-    <p>All communication and file transfers between devices happen directly over local Wi-Fi or WebRTC data channels.</p>
+    <h3>2.2 Information Collected Automatically</h3>
     <ul>
-        <li><strong>End-to-End Encryption (E2E):</strong> Every text message, voice note, and file shared through the chat feature is encrypted using AES-256 before transmission.</li>
-        <li><strong>Local Vault:</strong> Files stored in the secure vault are encrypted locally on your device. Without your PIN/Biometrics, they cannot be accessed. We do not have your PIN.</li>
-        <li><strong>WhatsApp Status Saver:</strong> The app requests access ONLY to the WhatsApp ".Statuses" folder locally on your device to let you view and save them. We never access other files or upload your data to any server. <strong>Disclaimer:</strong> This app is not affiliated with, sponsored, or endorsed by WhatsApp Inc. Any unauthorized downloading or re-uploading of contents is the sole responsibility of the user.</li>
+        <li><strong>Advertising Data (via Google AdMob):</strong> We use Google AdMob to display banner advertisements. AdMob may collect device identifiers, IP address, and ad interaction data as described in <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</li>
+        <li><strong>Crash & Performance Data:</strong> Standard Android crash reporting may transmit anonymized crash data to help improve the app.</li>
     </ul>
 
-    <h2>3. Third-Party Services</h2>
-    <p>The app integrates the following third-party services:</p>
+    <h3>2.3 Information We Do NOT Collect</h3>
     <ul>
-        <li><strong>Google STUN Servers:</strong> Used strictly to help devices discover each other's IP addresses for WebRTC connections. No file data or personal info is sent to Google.</li>
-        <li><strong>Google AdMob:</strong> We use Google AdMob to display banner advertisements within the Entertainment section. AdMob may collect device identifiers and usage data for ad personalization. You can learn more about Google's data practices at <a href="https://policies.google.com/privacy">Google Privacy Policy</a>. You may opt out of personalized ads through your device's Settings &gt; Google &gt; Ads.</li>
-        <li><strong>Entertainment Feed:</strong> The app fetches publicly available meme content from third-party APIs. This content is filtered for safety but is not created or controlled by us. Users can report or block inappropriate content directly within the app.</li>
+        <li>We do NOT collect your location data (used only at runtime for device discovery)</li>
+        <li>We do NOT upload your contacts to any server</li>
+        <li>We do NOT store your files on any cloud or server</li>
+        <li>We do NOT track your browsing activity</li>
+        <li>We do NOT collect or transmit your chat messages</li>
     </ul>
 
-    <h2>4. User-Generated Content (UGC) & Safety</h2>
-    <p>FileShare Pro provides features like in-app chat and file sharing. To ensure a safe environment, we adhere to strict User-Generated Content (UGC) policies:</p>
+    <h2>3. Permissions & Their Usage</h2>
+
+    <table>
+        <tr><th>Permission</th><th>Purpose</th><th>Data Shared?</th></tr>
+        <tr><td>Internet</td><td>WebRTC peer-to-peer connections and ad loading</td><td>No personal data</td></tr>
+        <tr><td>Location</td><td>Discovering nearby devices via Wi-Fi Direct (required by Android API). Not tracked or stored.</td><td>Never shared</td></tr>
+        <tr><td>Bluetooth</td><td>Nearby device discovery for file transfers</td><td>Never shared</td></tr>
+        <tr><td>Camera</td><td>QR code scanning for device pairing</td><td>Never shared</td></tr>
+        <tr><td>Storage / Media</td><td>Selecting files to share, saving received files, vault encryption</td><td>Never shared</td></tr>
+        <tr><td>Contacts</td><td>Displaying contact names locally for the chat feature. Contacts are read on-device only and are <strong>never uploaded</strong> to any server.</td><td>Never shared or uploaded</td></tr>
+        <tr><td>Microphone</td><td>Recording voice notes for local P2P chat</td><td>Never shared</td></tr>
+        <tr><td>Notifications</td><td>File transfer progress and incoming chat alerts</td><td>Never shared</td></tr>
+        <tr><td>Biometric</td><td>Vault unlock via fingerprint/face recognition</td><td>Never shared</td></tr>
+    </table>
+
+    <h2>4. Third-Party Services</h2>
+
+    <h3>4.1 Google AdMob</h3>
+    <p>We use Google AdMob to serve non-intrusive banner advertisements. AdMob may collect and use data as described in <a href="https://policies.google.com/technologies/ads" target="_blank">Google's Advertising Policies</a>. You can opt out of personalized ads through your device's Google Settings.</p>
+
+    <h3>4.2 Reddit Public API (Meme Feed)</h3>
+    <p>The Entertainment section fetches publicly available content from Reddit's public JSON API. We do not authenticate with Reddit on your behalf, and no Reddit account data is collected.</p>
+
+    <h3>4.3 STUN/TURN Servers</h3>
+    <p>For long-distance file transfers, the app uses publicly available STUN servers (Google, Cloudflare) and TURN relay servers to establish peer-to-peer WebRTC connections. These servers facilitate the connection only — your files are transferred directly between devices and are not stored on these relay servers.</p>
+
+    <h2>5. User-Generated Content (UGC)</h2>
+    <p>The Entertainment section displays memes and videos sourced from public Reddit feeds. We implement the following safety measures:</p>
     <ul>
-        <li><strong>Zero Tolerance:</strong> We have a zero-tolerance policy for objectionable content or abusive users. Sharing illegal, abusive, or sexually explicit content is strictly prohibited.</li>
-        <li><strong>Block & Report:</strong> Users have the ability to instantly <strong>Block</strong> abusive peers and <strong>Report</strong> inappropriate content directly within the app.</li>
-        <li><strong>Moderation:</strong> While all data is encrypted and P2P, users found violating our terms through verifiable reports may be permanently banned from using the app's communication features.</li>
+        <li><strong>NSFW Filtering:</strong> All content is automatically filtered using keyword-based and subreddit-based NSFW detection. Content flagged as NSFW or containing adult keywords is blocked.</li>
+        <li><strong>Report Feature:</strong> Users can report inappropriate content directly from the feed.</li>
+        <li><strong>Block Feature:</strong> Users can block specific content authors to hide all their future posts.</li>
     </ul>
 
-    <h2>5. Children's Privacy</h2>
-    <p>Our app does not collect personal information from anyone, including children under the age of 13.</p>
+    <div class="warning">
+        <strong>Content Disclaimer:</strong> We do not create, host, or endorse any user-generated content shown in the feed. All content is sourced from public APIs and is filtered for safety. If you encounter objectionable material, please use the in-app report feature.
+    </div>
 
-    <h2>6. Changes to This Privacy Policy</h2>
-    <p>We may update our Privacy Policy from time to time. You are advised to review this page periodically for any changes. Changes are effective immediately after they are posted on this page.</p>
+    <h2>6. WhatsApp Status Saver</h2>
+    <p>The Status Saver feature accesses locally stored WhatsApp status files from your device's storage using Android's Storage Access Framework (SAF). Specifically:</p>
+    <ul>
+        <li>It reads files from the <code>.Statuses</code> folder on your device only.</li>
+        <li>No WhatsApp data is uploaded, shared, or transmitted to any server.</li>
+        <li>This feature only works with content already downloaded to your device by WhatsApp.</li>
+    </ul>
 
-    <h2>7. Contact Us</h2>
-    <p>If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us at <strong><a href="mailto:ayaansaifi8586@gmail.com">ayaansaifi8586@gmail.com</a></strong> or via GitHub: <a href="https://github.com/Ayaansaifi">@Ayaansaifi</a>.</p>
+    <h2>7. Data Security</h2>
+    <ul>
+        <li><strong>Vault Encryption:</strong> Files stored in the vault are encrypted using AES-256-CBC with PBKDF2 key derivation (100,000 iterations).</li>
+        <li><strong>Transfer Encryption:</strong> Optional PIN-based encryption for file transfers using the same AES-256 standard.</li>
+        <li><strong>Local Storage:</strong> All app data (settings, history, chat) is stored locally on your device using SharedPreferences and on-device file storage.</li>
+        <li><strong>No Cloud Backup:</strong> We do not backup your data to any cloud service.</li>
+    </ul>
+
+    <h2>8. Data Retention & Deletion</h2>
+    <p>Since all data is stored locally on your device:</p>
+    <ul>
+        <li>Uninstalling the app removes all app data except vault files stored in public Documents storage (these persist for your security).</li>
+        <li>You can manually clear all app data from Settings → Clear All Local Data.</li>
+        <li>You can clear the vault from Settings → Clear Vault.</li>
+    </ul>
+
+    <h2>9. Children's Privacy</h2>
+    <p>FileShare Pro is not directed at children under the age of 13. We do not knowingly collect personal information from children. The entertainment feed implements NSFW filtering to prevent exposure to inappropriate content.</p>
+
+    <h2>10. Video Downloading</h2>
+    <div class="highlight">
+        <strong>Important:</strong> FileShare Pro does <strong>not</strong> include any video downloading functionality from YouTube, Instagram, TikTok, or any other third-party platform. The app is strictly a peer-to-peer file sharing tool with local encryption capabilities.
+    </div>
+
+    <h2>11. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. Any changes will be reflected on this page with an updated "Last updated" date. We encourage you to review this policy periodically.</p>
+
+    <h2>12. Contact Us</h2>
+    <p>If you have any questions about this Privacy Policy or the app's data practices, please contact us at:</p>
+    <p>📧 <a href="mailto:filesharepro.support@gmail.com">filesharepro.support@gmail.com</a></p>
+
+</div>
+
+<div class="footer">
+    <p>© 2026 FileShare Pro. All rights reserved.</p>
+    <p>Made with ❤️ in India</p>
+</div>
 
 </body>
 </html>
