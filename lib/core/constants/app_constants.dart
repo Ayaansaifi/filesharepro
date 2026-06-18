@@ -6,20 +6,37 @@ class AppConstants {
   static const String appVersion = '1.1.0';
   static const String appPackage = 'com.filesharepro.filesharepro';
 
-  // ─── WebRTC STUN Servers (Free, No Database) ────────────
+  // ─── WebRTC STUN/TURN (long-distance P2P) ─────────────────
   static const List<Map<String, dynamic>> iceServers = [
     {'urls': 'stun:stun.l.google.com:19302'},
     {'urls': 'stun:stun1.l.google.com:19302'},
-    {'urls': 'stun:stun2.l.google.com:19302'},
-    {'urls': 'stun:stun3.l.google.com:19302'},
-    {'urls': 'stun:stun4.l.google.com:19302'},
-    {'urls': 'stun:stun.services.mozilla.com'},
     {'urls': 'stun:stun.cloudflare.com:3478'},
+    // WARNING: Public TURN relay (openrelay.metered.ca).
+    // These are public demo credentials that may have bandwidth limits
+    // or stop working. It is highly recommended to replace these with
+    // your own metered.ca (or Twilio) TURN server credentials in production.
+    {
+      'urls': 'turn:openrelay.metered.ca:80',
+      'username': 'openrelayproject',
+      'credential': 'openrelayproject',
+    },
+    {
+      'urls': 'turn:openrelay.metered.ca:443',
+      'username': 'openrelayproject',
+      'credential': 'openrelayproject',
+    },
+    {
+      'urls': 'turn:openrelay.metered.ca:443?transport=tcp',
+      'username': 'openrelayproject',
+      'credential': 'openrelayproject',
+    },
   ];
 
   // ─── Transfer Settings ──────────────────────────────────
-  static const int nearbyChunkSize = 65536; // 64KB for Wi-Fi Direct
-  static const int webrtcChunkSize = 16384; // 16KB for WebRTC DataChannel
+  static const int nearbyChunkSize = 65536; // 64KB Wi‑Fi Direct
+  static const int webrtcChunkSize = 65536; // 64KB — faster for movies
+  static const int webrtcChunkDelayEvery = 20; // pause every N chunks (backpressure)
+  static const int webrtcMaxBufferedAmount = 512 * 1024; // 512KB buffer window
   static const int maxRetries = 3;
   static const int connectionTimeoutSec = 30;
   static const int transferHistoryLimit = 50;
@@ -56,6 +73,24 @@ class AppConstants {
   static const String keyTransferHistory = 'transfer_history';
   static const String keyFirstLaunch = 'first_launch';
   static const String keyThemeMode = 'theme_mode';
+  static const String supportEmail = 'filesharepro.support@gmail.com';
+  static const String privacyPolicyUrl =
+      'https://ayaansaifi.github.io/filesharepro/privacy_policy/';
+  static const String termsUrl =
+      'https://ayaansaifi.github.io/filesharepro/terms_and_conditions/';
+
+  /// WARNING: Currently using Google AdMob TEST IDs because real IDs are not available.
+  /// You MUST replace these with your real AdMob App ID and Banner Unit ID
+  /// before submitting the final APK/AAB to the Google Play Store to earn revenue.
+  /// (Using test IDs in production won't cause immediate rejection, but you won't earn money).
+  static const String admobAppId = String.fromEnvironment(
+    'ADMOB_APP_ID',
+    defaultValue: 'ca-app-pub-3940256099942544~3347511713',
+  );
+  static const String admobBannerId = String.fromEnvironment(
+    'ADMOB_BANNER_ID',
+    defaultValue: 'ca-app-pub-3940256099942544/6300978111',
+  );
 
   // ─── Signaling Room Code ────────────────────────────────
   static const int roomCodeLength = 6;
