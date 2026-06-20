@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../data/services_data.dart';
@@ -77,6 +78,8 @@ class _ServicesScreenState extends State<ServicesScreen>
 
               // ─── Search Bar ──────────────────────────
               _buildSearchBar(),
+              const SizedBox(height: 16),
+              _buildQuickContactBar(),
               const SizedBox(height: 24),
 
               // ─── Categories List ─────────────────────
@@ -136,6 +139,87 @@ class _ServicesScreenState extends State<ServicesScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildQuickContactBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          Expanded(
+            child: _quickAction(
+              icon: Icons.chat_rounded,
+              label: 'WhatsApp',
+              color: const Color(0xFF25D366),
+              onTap: () => _launchUrl(
+                'https://wa.me/918586040076?text=Hi, I need a home service booking from FileShare Pro',
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _quickAction(
+              icon: Icons.call_rounded,
+              label: 'Call Now',
+              color: AppColors.primaryCyan,
+              onTap: () => _launchUrl('tel:+918586040076'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _quickAction(
+              icon: Icons.location_on_rounded,
+              label: 'Near Me',
+              color: const Color(0xFF4CAF50),
+              onTap: () => _launchUrl(
+                'https://wa.me/918586040076?text=Hi, I need a local service near my area. Please help me find the right professional.',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 4),
+            Text(label,
+                style: AppTypography.caption.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _buildSearchBar() {
@@ -225,6 +309,7 @@ class _ServicesScreenState extends State<ServicesScreen>
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
+        SliverToBoxAdapter(child: _buildTrustBanner()),
         if (iconCats.isNotEmpty)
           SliverToBoxAdapter(
             child: _buildQuickIconsSection(iconCats),
@@ -246,6 +331,43 @@ class _ServicesScreenState extends State<ServicesScreen>
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildTrustBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.whatsAppGreen.withValues(alpha: 0.2),
+              AppColors.surface,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.verified_user_rounded, color: AppColors.whatsAppGreen),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Verified Local Partners', style: AppTypography.labelLarge),
+                  Text(
+                    'WhatsApp booking • Transparent pricing • No hidden fees',
+                    style: AppTypography.caption,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

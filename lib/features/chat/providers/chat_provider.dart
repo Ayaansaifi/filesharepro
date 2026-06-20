@@ -87,6 +87,12 @@ class ChatRoomsNotifier extends StateNotifier<ChatRoomsState> {
     return success;
   }
 
+  String? get lastAnswerLink => _service.lastAnswerLink;
+
+  Future<bool> applyReceiverAnswer(String link) async {
+    return _service.applyReceiverAnswer(link);
+  }
+
   Future<void> deleteRoom(String roomCode) async {
     await _service.deleteChatRoom(roomCode);
     await loadRooms();
@@ -143,7 +149,9 @@ class ActiveChatNotifier extends StateNotifier<ActiveChatState> {
   }
 
   Future<void> loadChat(String roomCode) async {
+    await _service.reconnectRoom(roomCode);
     final messages = await _service.getRoomMessages(roomCode);
+    await _service.markRoomAsRead(roomCode);
     state = state.copyWith(
       roomCode: roomCode,
       messages: messages,

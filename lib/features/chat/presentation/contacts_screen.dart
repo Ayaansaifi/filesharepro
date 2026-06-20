@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
+import '../../../core/utils/permission_utils.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -175,11 +175,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 label: 'Allow Access',
                                 icon: Icons.check_circle_outline_rounded,
                                 onPressed: () async {
-                                  final status = await Permission.contacts.request();
-                                  if (status.isGranted) {
+                                  final granted = await PermissionUtils.requestContactsPermission(context);
+                                  if (granted) {
                                     ref.invalidate(futureContactsProvider);
-                                  } else if (status.isPermanentlyDenied) {
-                                    openAppSettings();
                                   }
                                 },
                               )
@@ -430,7 +428,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
             ),
             GestureDetector(
               onTap: () {
-                final message = 'Hey! Let\'s chat securely on FileShare Pro! Download it and we can share files instantly. 🚀\n\nhttps://play.google.com/store/apps/details?id=com.fileshare.pro';
+                final message = 'Hey! Let\'s chat securely on FileShare Pro! Download it and we can share files instantly. 🚀\n\nhttps://play.google.com/store/apps/details?id=com.filesharepro.filesharepro';
                 Share.share(message, subject: 'Join me on FileShare Pro');
               },
               child: Container(

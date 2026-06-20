@@ -1,7 +1,9 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -74,6 +76,21 @@ class _TransferProgressScreenState
               // ─── File Info ──────────────────────────
               if (state.currentFileName != null)
                 _buildFileInfo(state),
+
+              if (widget.isSender &&
+                  state.isWaiting &&
+                  state.connectionLink != null)
+                _buildSenderLinkSection(state, context),
+
+              if (!widget.isSender &&
+                  state.isWaiting &&
+                  state.answerLink != null)
+                _buildReceiverAnswerSection(state, context),
+
+              if (widget.isSender &&
+                  state.isWaiting &&
+                  state.connectionLink != null)
+                _buildPasteAnswerSection(context, ref),
 
               const Spacer(),
 
@@ -220,6 +237,135 @@ class _TransferProgressScreenState
       case TransferState.error:
         return 'Transfer Failed';
     }
+  }
+
+  Widget _buildSenderLinkSection(TransferUiState state, BuildContext context) {
+    final link = state.connectionLink!;
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text('Share with Receiver', style: AppTypography.labelLarge),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: QrImageView(data: link, size: 140, backgroundColor: Colors.white),
+            ),
+            if (state.roomCode != null) ...[
+              const SizedBox(height: 8),
+              Text('Code: ${state.roomCode}', style: AppTypography.caption),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: GradientButton(
+                    label: 'Share Link',
+                    icon: Icons.share_rounded,
+                    height: 44,
+                    onPressed: () {
+                      Share.share(
+                        'FileShare Pro — receive my files:\n$link\n\n'
+                        'Open app → Receive → Paste Link\n'
+                        'https://play.google.com/store/apps/details?id=${AppConstants.appPackage}',
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: link));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Link copied!')),
+                    );
+                  },
+                  icon: const Icon(Icons.copy_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReceiverAnswerSection(TransferUiState state, BuildContext context) {
+    final link = state.answerLink!;
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text('Send this back to Sender', style: AppTypography.labelLarge),
+            const SizedBox(height: 8),
+            Text(
+              'Share via WhatsApp/SMS so sender can paste answer',
+              style: AppTypography.caption,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: GradientButton(
+                    label: 'Share Answer',
+                    icon: Icons.reply_rounded,
+                    height: 44,
+                    gradient: AppColors.receiveGradient,
+                    onPressed: () => Share.share('FileShare Pro answer:\n$link'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: link));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Answer link copied!')),
+                    );
+                  },
+                  icon: const Icon(Icons.copy_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasteAnswerSection(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: GradientButton(
+        label: 'Paste Receiver Answer',
+        icon: Icons.paste_rounded,
+        height: 44,
+        gradient: AppColors.primaryGradient,
+        onPressed: () async {
+          final data = await Clipboard.getData('text/plain');
+          final text = data?.text?.trim();
+          if (text == null || !text.startsWith('filesharepro://')) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Copy receiver answer link first'),
+                ),
+              );
+            }
+            return;
+          }
+          await ref.read(transferStateProvider.notifier).applyReceiverAnswer(text);
+        },
+      ),
+    );
   }
 
   Widget _buildFileInfo(TransferUiState state) {

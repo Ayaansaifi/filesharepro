@@ -145,4 +145,46 @@ class PermissionUtils {
       return 33;
     }
   }
+  /// Request contacts permission with Prominent Disclosure dialog
+  /// (required by Google Play for sensitive permissions)
+  static Future<bool> requestContactsPermission(BuildContext context) async {
+    if (kIsWeb) return true;
+
+    final status = await Permission.contacts.status;
+    if (status.isGranted) return true;
+
+    // Show Prominent Disclosure before requesting contacts
+    if (context.mounted) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Contacts Access Needed'),
+          content: const Text(
+            'FileShare Pro would like to access your contacts to display names '
+            'instead of phone numbers in the chat feature.\n\n'
+            'Your contacts stay on your device and are NEVER uploaded to any server.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('No Thanks'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Allow'),
+            ),
+          ],
+        ),
+      );
+
+      if (proceed != true) return false;
+    }
+
+    final result = await Permission.contacts.request();
+    if (result.isPermanentlyDenied && context.mounted) {
+      showPermissionDeniedDialog(context, 'Contacts');
+    }
+    return result.isGranted;
+  }
 }

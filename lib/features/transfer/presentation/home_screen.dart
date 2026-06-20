@@ -8,8 +8,10 @@ import '../../../core/widgets/app_animated_builder.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../chat/presentation/chat_list_screen.dart';
 import '../../vault/presentation/vault_screen.dart';
+import '../../../core/services/transfer_history_service.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
+import 'transfer_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,9 +27,13 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<double> _sendCardAnim;
   late Animation<double> _receiveCardAnim;
 
+  Map<String, int> _stats = {'sent': 0, 'received': 0, 'encrypted': 0};
+  final _history = TransferHistoryService();
+
   @override
   void initState() {
     super.initState();
+    _loadStats();
     _bgAnimController = AnimationController(
       duration: const Duration(seconds: 8),
       vsync: this,
@@ -53,6 +59,17 @@ class _HomeScreenState extends State<HomeScreen>
     );
 
     _cardAnimController.forward();
+  }
+
+  Future<void> _loadStats() async {
+    final s = await _history.getStats();
+    if (mounted) setState(() => _stats = s);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadStats();
   }
 
   @override
@@ -363,18 +380,32 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildQuickStats() {
-    return GlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      borderRadius: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(child: _buildStatItem('Files Sent', '0', Icons.arrow_upward_rounded)),
-          Container(width: 1, height: 30, color: AppColors.glassBorder),
-          Expanded(child: _buildStatItem('Received', '0', Icons.arrow_downward_rounded)),
-          Container(width: 1, height: 30, color: AppColors.glassBorder),
-          Expanded(child: _buildStatItem('Encrypted', '0', Icons.lock_rounded)),
-        ],
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(context, _createRoute(const TransferHistoryScreen()));
+      },
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        borderRadius: 16,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: _buildStatItem('Files Sent', '${_stats['sent'] ?? 0}', Icons.arrow_upward_rounded)),
+            Container(width: 1, height: 30, color: AppColors.glassBorder),
+            Expanded(child: _buildStatItem('Received', '${_stats['received'] ?? 0}', Icons.arrow_downward_rounded)),
+            Container(width: 1, height: 30, color: AppColors.glassBorder),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildStatItem('Total', '${_stats['total'] ?? 0}', Icons.history_rounded),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, color: AppColors.textHint, size: 16),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

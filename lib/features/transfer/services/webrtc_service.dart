@@ -40,9 +40,14 @@ class WebRTCService {
   // ─── Receiving state ──────────────────────────────────────
   String? _receivingFileName;
   int? _receivingFileSize;
-  List<Uint8List> _receivedChunks = [];
   int _receivedBytes = 0;
+  IOSink? _receiveSink;
+  File? _receiveTempFile;
+  int _chunksSincePause = 0;
   Completer<File?>? _receiveCompleter;
+  bool _sessionEnded = false;
+  final List<Map<String, dynamic>> _localIceCandidates = [];
+  final List<Map<String, dynamic>> _pendingRemoteCandidates = [];
 
   // ─── ICE Configuration ───────────────────────────────────
   
@@ -60,6 +65,11 @@ class WebRTCService {
       });
 
       _peerConnection!.onIceCandidate = (candidate) {
+        _localIceCandidates.add({
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        });
         onIceCandidate?.call(candidate);
       };
 
@@ -92,11 +102,56 @@ class WebRTCService {
 
   // ─── SENDER: Create Offer ────────────────────────────────
 
+  /// Wait until ICE gathering completes (or times out).
+  Future<void> _waitForIceGathering() async {
+    if (_peerConnection == null) return;
+    final completer = Completer<void>();
+    void listener(RTCIceGatheringState state) {
+      if (state == RTCIceGatheringState.RTCIceGatheringStateComplete &&
+          !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+
+    _peerConnection!.onIceGatheringState = listener;
+    if (_peerConnection!.iceGatheringState ==
+        RTCIceGatheringState.RTCIceGatheringStateComplete) {
+      return;
+    }
+    await completer.future.timeout(
+      const Duration(seconds: AppConstants.connectionTimeoutSec),
+      onTimeout: () {},
+    );
+  }
+
+  Map<String, dynamic> _encodeSessionDescription(RTCSessionDescription desc) {
+    return {
+      'type': desc.type,
+      'sdp': desc.sdp,
+      'candidates': List<Map<String, dynamic>>.from(_localIceCandidates),
+    };
+  }
+
+  Future<void> _applyRemoteCandidates(List<dynamic>? candidates) async {
+    if (candidates == null || _peerConnection == null) return;
+    for (final raw in candidates) {
+      if (raw is! Map) continue;
+      final candidate = RTCIceCandidate(
+        raw['candidate'] as String?,
+        raw['sdpMid'] as String?,
+        raw['sdpMLineIndex'] as int?,
+      );
+      await addIceCandidate(candidate);
+    }
+  }
+
   /// Create an SDP offer and data channel (sender side)
   Future<String?> createOffer() async {
     if (_peerConnection == null) await initialize();
 
     try {
+      _localIceCandidates.clear();
+      _pendingRemoteCandidates.clear();
       // Create data channel for file transfer
       final channelInit = RTCDataChannelInit()
         ..ordered = true
@@ -115,13 +170,10 @@ class WebRTCService {
       });
 
       await _peerConnection!.setLocalDescription(offer);
+      await _waitForIceGathering();
       onStatusChange?.call('Offer created. Share with receiver.');
 
-      // Encode offer as compact JSON
-      return json.encode({
-        'type': offer.type,
-        'sdp': offer.sdp,
-      });
+      return json.encode(_encodeSessionDescription(offer));
     } catch (e) {
       onError?.call('Failed to create offer: $e');
       return null;
@@ -135,13 +187,16 @@ class WebRTCService {
     if (_peerConnection == null) await initialize();
 
     try {
-      final offerData = json.decode(offerJson);
+      _localIceCandidates.clear();
+      _pendingRemoteCandidates.clear();
+      final offerData = json.decode(offerJson) as Map<String, dynamic>;
       final offer = RTCSessionDescription(
         offerData['sdp'],
         offerData['type'],
       );
 
       await _peerConnection!.setRemoteDescription(offer);
+      await _applyRemoteCandidates(offerData['candidates'] as List<dynamic>?);
 
       final answer = await _peerConnection!.createAnswer({
         'offerToReceiveAudio': false,
@@ -149,12 +204,10 @@ class WebRTCService {
       });
 
       await _peerConnection!.setLocalDescription(answer);
-      onStatusChange?.call('Answer created. Connecting...');
+      await _waitForIceGathering();
+      onStatusChange?.call('Answer created. Share back with sender.');
 
-      return json.encode({
-        'type': answer.type,
-        'sdp': answer.sdp,
-      });
+      return json.encode(_encodeSessionDescription(answer));
     } catch (e) {
       onError?.call('Failed to create answer: $e');
       return null;
@@ -164,13 +217,14 @@ class WebRTCService {
   /// Set remote answer (sender side)
   Future<void> setRemoteAnswer(String answerJson) async {
     try {
-      final answerData = json.decode(answerJson);
+      final answerData = json.decode(answerJson) as Map<String, dynamic>;
       final answer = RTCSessionDescription(
         answerData['sdp'],
         answerData['type'],
       );
 
       await _peerConnection!.setRemoteDescription(answer);
+      await _applyRemoteCandidates(answerData['candidates'] as List<dynamic>?);
       onStatusChange?.call('Remote answer set. Finalizing connection...');
     } catch (e) {
       onError?.call('Failed to set answer: $e');
@@ -216,11 +270,19 @@ class WebRTCService {
 
   void _handleDataChannelMessage(RTCDataChannelMessage message) {
     if (message.isBinary) {
-      // File data chunk
-      if (_receivingFileName != null && _receivingFileSize != null) {
-        _receivedChunks.add(message.binary);
+      if (_receivingFileName != null && _receiveSink != null) {
+        _receiveSink!.add(message.binary);
         _receivedBytes += message.binary.length;
-        onTransferProgress?.call(_receivedBytes / _receivingFileSize!);
+        _chunksSincePause++;
+        onTransferProgress?.call(_receivedBytes / (_receivingFileSize ?? 1));
+
+        if (_chunksSincePause >= AppConstants.webrtcChunkDelayEvery) {
+          _chunksSincePause = 0;
+          final buffered = _dataChannel?.bufferedAmount ?? 0;
+          if (buffered > AppConstants.webrtcMaxBufferedAmount) {
+            Future.delayed(const Duration(milliseconds: 12));
+          }
+        }
       }
     } else {
       // Control/Text message
@@ -236,18 +298,24 @@ class WebRTCService {
       }
       
       if (text.startsWith('HEADER:')) {
-        // Parse header: "HEADER:filename:filesize"
         final parts = text.split(':');
         if (parts.length >= 3) {
-          _receivingFileName = parts.sublist(1, parts.length - 1).join(':'); // Handle colons in filename
+          _receivingFileName =
+              parts.sublist(1, parts.length - 1).join(':');
           _receivingFileSize = int.tryParse(parts.last) ?? 0;
-          _receivedChunks = [];
           _receivedBytes = 0;
+          _chunksSincePause = 0;
           _isTransferring = true;
-          onStatusChange?.call('Receiving: $_receivingFileName (${FileUtils.formatFileSize(_receivingFileSize!)})');
+          _startReceiveToDisk();
+          onStatusChange?.call(
+            'Receiving: $_receivingFileName (${FileUtils.formatFileSize(_receivingFileSize!)})',
+          );
         }
       } else if (text.startsWith('DONE:')) {
         _finishReceiving();
+      } else if (text == 'ALL_DONE') {
+        _sessionEnded = true;
+        _receiveCompleter?.complete(null);
       } else {
         // Pass plain/decrypted text to callback (could be TEXT, TYPING, READ, etc.)
         onTextMessageReceived?.call(text);
@@ -255,36 +323,72 @@ class WebRTCService {
     }
   }
 
+  Future<void> _startReceiveToDisk() async {
+    await _closeReceiveSink();
+    try {
+      final downloadDir = await FileUtils.getReceivedDir();
+      final safeName = FileUtils.sanitizeFileName(_receivingFileName ?? 'file');
+      final path = await FileUtils.uniqueFilePath(downloadDir.path, safeName);
+      _receiveTempFile = File(path);
+      _receiveSink = _receiveTempFile!.openWrite();
+    } catch (e) {
+      onError?.call('Cannot write received file: $e');
+    }
+  }
+
+  Future<void> _closeReceiveSink() async {
+    try {
+      await _receiveSink?.flush();
+      await _receiveSink?.close();
+    } catch (_) {}
+    _receiveSink = null;
+  }
+
   Future<void> _finishReceiving() async {
     if (_receivingFileName == null) return;
 
-    try {
-      final downloadDir = await FileUtils.getReceivedDir();
-      final file = File('${downloadDir.path}/$_receivingFileName');
-      
-      // Merge all chunks into file
-      final sink = file.openWrite();
-      for (final chunk in _receivedChunks) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
+    if (_receivingFileSize != null && _receivingFileSize! > 0 &&
+        _receivedBytes != _receivingFileSize) {
+      onError?.call(
+        'Incomplete file received ($_receivedBytes / $_receivingFileSize bytes)',
+      );
+      _receiveCompleter?.complete(null);
+      _resetReceiveState();
+      return;
+    }
 
-      _isTransferring = false;
-      onTransferComplete?.call(_receivingFileName!);
-      onStatusChange?.call('File received: $_receivingFileName');
+    try {
+      await _closeReceiveSink();
+      final file = _receiveTempFile;
+      if (file == null || !await file.exists()) {
+        onError?.call('Received file missing on disk');
+        _receiveCompleter?.complete(null);
+        _resetReceiveState();
+        return;
+      }
+
+      final safeName = FileUtils.sanitizeFileName(_receivingFileName!);
+      onTransferComplete?.call(safeName);
+      onStatusChange?.call('File received: $safeName');
       
       _receiveCompleter?.complete(file);
       
-      // Reset state
-      _receivingFileName = null;
-      _receivingFileSize = null;
-      _receivedChunks = [];
-      _receivedBytes = 0;
+      _resetReceiveState();
     } catch (e) {
       onError?.call('Failed to save received file: $e');
       _receiveCompleter?.complete(null);
+      _resetReceiveState();
     }
+  }
+
+  void _resetReceiveState() {
+    _receivingFileName = null;
+    _receivingFileSize = null;
+    _receivedBytes = 0;
+    _chunksSincePause = 0;
+    _receiveTempFile = null;
+    _receiveSink = null;
+    _isTransferring = false;
   }
 
   // ─── SENDER: Send File ───────────────────────────────────
@@ -321,26 +425,34 @@ class WebRTCService {
       // Send header
       sendTextMessage('HEADER:$fileName:$fileSize');
 
-      // Send file in chunks (16KB chunks for WebRTC data channel)
-      const chunkSize = 16384; // 16KB
+      // Send file in chunks — stream from disk (ShareIt-style, low memory)
+      const chunkSize = AppConstants.webrtcChunkSize;
       int sent = 0;
-      
-      final bytes = await file.readAsBytes();
-      for (int offset = 0; offset < bytes.length; offset += chunkSize) {
-        final end = (offset + chunkSize > bytes.length)
-            ? bytes.length
-            : offset + chunkSize;
-            
-        final chunk = bytes.sublist(offset, end);
+
+      final raf = await file.open();
+      try {
+      while (sent < fileSize) {
+        final remaining = fileSize - sent;
+        final readSize = remaining < chunkSize ? remaining : chunkSize;
+        final chunk = await raf.read(readSize);
+
+        var waitLoops = 0;
+        while ((_dataChannel!.bufferedAmount ?? 0) > AppConstants.webrtcMaxBufferedAmount &&
+            waitLoops < 200) {
+          await Future.delayed(const Duration(milliseconds: 10));
+          waitLoops++;
+        }
+
         _dataChannel!.send(RTCDataChannelMessage.fromBinary(chunk));
-        
         sent += chunk.length;
         onTransferProgress?.call(sent / fileSize);
-        
-        // Small delay to prevent buffer overflow
-        if (sent % (chunkSize * 10) == 0) {
-           await Future.delayed(const Duration(milliseconds: 10));
+
+        if (sent % (chunkSize * AppConstants.webrtcChunkDelayEvery) == 0) {
+          await Future.delayed(const Duration(milliseconds: 2));
         }
+      }
+      } finally {
+        await raf.close();
       }
 
       // Send done
@@ -357,10 +469,27 @@ class WebRTCService {
     }
   }
 
-  /// Wait for an incoming file transfer
+  /// Wait for an incoming file transfer (supports multiple files per session)
   Future<File?> waitForFile() async {
     _receiveCompleter = Completer<File?>();
-    return await _receiveCompleter!.future;
+    return _receiveCompleter!.future;
+  }
+
+  bool get sessionEnded => _sessionEnded;
+
+  void resetSessionEnd() => _sessionEnded = false;
+
+  /// Prepare for the next incoming file in the same session
+  void prepareForNextFile() {
+    if (_receiveCompleter != null && !_receiveCompleter!.isCompleted) {
+      _receiveCompleter!.complete(null);
+    }
+    _receiveCompleter = Completer<File?>();
+  }
+
+  /// Tell receiver that all files in this session were sent.
+  void signalAllDone() {
+    sendTextMessage('ALL_DONE');
   }
 
   // ─── Cleanup ─────────────────────────────────────────────

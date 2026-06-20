@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:mime/mime.dart';
 import 'package:flutter/foundation.dart';
+import '../constants/app_constants.dart';
 
 class FileUtils {
   FileUtils._();
@@ -26,6 +27,40 @@ class FileUtils {
   /// Get file name from path
   static String getFileName(String path) {
     return path.split(RegExp(r'[/\\]')).last;
+  }
+
+  /// Sanitize a received file name — blocks path traversal and unsafe chars.
+  static String sanitizeFileName(String rawName) {
+    var name = rawName.replaceAll(RegExp(r'[/\\]'), '_');
+    name = name.replaceAll('..', '_');
+    name = name.replaceAll(RegExp(r'[\x00-\x1f]'), '');
+    name = name.trim();
+    if (name.isEmpty || name == '.' || name == '..') {
+      name = 'received_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    if (name.length > 200) {
+      final ext = getExtension(name);
+      name = '${name.substring(0, 180)}$ext';
+    }
+    return name;
+  }
+
+  /// Unique path if file already exists (ShareIt-style auto-rename).
+  static Future<String> uniqueFilePath(String directory, String fileName) async {
+    final safeName = sanitizeFileName(fileName);
+    var target = '$directory/$safeName';
+    if (!await File(target).exists()) return target;
+
+    final ext = getExtension(safeName);
+    final base = ext.isEmpty
+        ? safeName
+        : safeName.substring(0, safeName.length - ext.length);
+
+    for (var i = 1; i < 1000; i++) {
+      final candidate = '$directory/${base}_$i$ext';
+      if (!await File(candidate).exists()) return candidate;
+    }
+    return '$directory/${base}_${DateTime.now().millisecondsSinceEpoch}$ext';
   }
 
   /// Get MIME type
@@ -61,56 +96,82 @@ class FileUtils {
     return transferDir;
   }
 
-  /// Get vault directory (hidden with .nomedia)
+  /// Public vault root — survives app uninstall (Documents folder).
+  static const String publicVaultRoot =
+      '/storage/emulated/0/Documents/FileShareProVault';
+  static const String legacyVaultRoot =
+      '/storage/emulated/0/Documents/.FileShareVault';
+
+  static bool isUsingPublicVaultStorage = false;
+
+  /// Get vault directory (public Documents — persists after uninstall).
   static Future<Directory> getVaultDir() async {
-    // Save to public external storage so it survives app uninstall
-    Directory? extDir;
-    if (!kIsWeb && Platform.isAndroid) {
-      extDir = await getExternalStorageDirectory();
-      // Go up to public directory if possible, or use standard Documents
-      // For FileSharePro, we create a folder in Documents
-      final docDir = Directory('/storage/emulated/0/Documents/.FileShareVault');
-      if (!await docDir.exists()) {
-        try {
-          await docDir.create(recursive: true);
-        } catch (e) {
-          // Fallback to app-specific external if permission denied
-          extDir = await getExternalStorageDirectory();
+    if (kIsWeb || !Platform.isAndroid) {
+      final dir = await getApplicationDocumentsDirectory();
+      final finalDir = Directory('${dir.path}/.secure_vault');
+      if (!await finalDir.exists()) await finalDir.create(recursive: true);
+      isUsingPublicVaultStorage = false;
+      return finalDir;
+    }
+
+    Directory? rootDir;
+    for (final rootPath in [publicVaultRoot, legacyVaultRoot]) {
+      final candidate = Directory(rootPath);
+      try {
+        if (!await candidate.exists()) {
+          await candidate.create(recursive: true);
         }
-      }
-      extDir = docDir.existsSync() ? docDir : extDir;
-    } else {
-      extDir = await getApplicationDocumentsDirectory();
+        rootDir = candidate;
+        isUsingPublicVaultStorage = true;
+        break;
+      } catch (_) {}
     }
-    
-    final vaultDir = extDir ?? await getApplicationDocumentsDirectory();
-    final finalDir = Directory('${vaultDir.path}/.secure_vault');
-    if (!await finalDir.exists()) {
-      await finalDir.create(recursive: true);
-      // Create .nomedia to hide from gallery
-      final nomedia = File('${finalDir.path}/.nomedia');
-      await nomedia.create();
+
+    rootDir ??= await getExternalStorageDirectory();
+    isUsingPublicVaultStorage = rootDir?.path.contains('/Documents/') ?? false;
+
+    final vaultDir = Directory('${rootDir!.path}/.secure_vault');
+    if (!await vaultDir.exists()) {
+      await vaultDir.create(recursive: true);
+      await File('${vaultDir.path}/${AppConstants.nomediaFile}').create();
+      await File('${rootDir.path}/${AppConstants.nomediaFile}').create();
     }
-    return finalDir;
+    return vaultDir;
   }
 
-  /// Get saved statuses directory
+  /// Public downloads folder for document export.
+  static Future<Directory> getPublicDownloadsDir() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      final dir = Directory('/storage/emulated/0/Download/FileSharePro');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  /// Saved WhatsApp statuses — public Pictures folder (survives uninstall).
   static Future<Directory> getSavedStatusDir() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      final dir = Directory('/storage/emulated/0/Pictures/FileSharePro/Statuses');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
     final dir = await getApplicationDocumentsDirectory();
     final statusDir = Directory('${dir.path}/saved_statuses');
-    if (!await statusDir.exists()) {
-      await statusDir.create(recursive: true);
-    }
+    if (!await statusDir.exists()) await statusDir.create(recursive: true);
     return statusDir;
   }
 
-  /// Get received files directory
+  /// Get received files directory (public Downloads — survives uninstall)
   static Future<Directory> getReceivedDir() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      final dir = Directory('/storage/emulated/0/Download/FileSharePro/Received');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
     final dir = await getApplicationDocumentsDirectory();
     final receivedDir = Directory('${dir.path}/received_files');
-    if (!await receivedDir.exists()) {
-      await receivedDir.create(recursive: true);
-    }
+    if (!await receivedDir.exists()) await receivedDir.create(recursive: true);
     return receivedDir;
   }
 

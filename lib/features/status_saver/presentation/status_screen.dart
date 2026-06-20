@@ -107,7 +107,29 @@ class _StatusScreenState extends State<StatusScreen>
                   ? _buildPermissionRequest()
                   : _isLoading
                       ? _buildLoading()
-                      : _buildStatusContent(),
+                      : Column(
+                          children: [
+                            if (_errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 8),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.warning.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    _errorMessage!,
+                                    style: AppTypography.caption,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            Expanded(child: _buildStatusContent()),
+                          ],
+                        ),
             ),
           ],
         ),

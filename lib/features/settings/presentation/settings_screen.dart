@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../vault/services/vault_service.dart';
 import '../../status_saver/providers/status_provider.dart';
 import '../../transfer/presentation/widgets/pin_input_dialog.dart';
+import '../../../core/services/transfer_history_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -179,6 +180,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _clearAllLocalData() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Clear local data?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Clears transfer history, chat prefs, and settings on this device. '
+          'Vault files are NOT deleted — use Clear Vault for that.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Clear', style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    await TransferHistoryService().clear();
+    final prefs = await SharedPreferences.getInstance();
+    final vaultPin = prefs.getString(AppConstants.keyVaultPinHash);
+    final vaultSalt = prefs.getString(AppConstants.keyVaultSalt);
+    await prefs.clear();
+    if (vaultPin != null) await prefs.setString(AppConstants.keyVaultPinHash, vaultPin);
+    if (vaultSalt != null) await prefs.setString(AppConstants.keyVaultSalt, vaultSalt);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Local app data cleared.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -212,6 +247,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyScreen()));
                 },
+              ),
+              _buildSettingTile(
+                icon: Icons.cleaning_services_outlined,
+                title: 'Clear All Local Data',
+                subtitle: 'Transfer history & app prefs (vault separate)',
+                iconColor: AppColors.error,
+                onTap: _clearAllLocalData,
               ),
               const SizedBox(height: 24),
 
@@ -286,7 +328,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: 'Tell your friends about FileShare Pro',
                 onTap: () {
                   Share.share(
-                    'Hey! Let\'s chat securely on FileShare Pro! Download it and we can share files instantly 🚀\n\nhttps://play.google.com/store/apps/details?id=com.fileshare.pro',
+                    'Hey! Let\'s chat securely on FileShare Pro! Download it and we can share files instantly 🚀\n\nhttps://play.google.com/store/apps/details?id=com.filesharepro.filesharepro',
                     subject: 'Join me on FileShare Pro',
                   );
                 },

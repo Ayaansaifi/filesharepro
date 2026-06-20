@@ -1,39 +1,37 @@
-import 'dart:math';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/gradient_button.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/utils/permission_utils.dart';
-import '../services/nearby_service.dart';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
+import '../providers/transfer_provider.dart';
+import '../services/transfer_manager.dart';
+import 'transfer_progress_screen.dart';
 import 'widgets/pin_input_dialog.dart';
+import 'radar_discovery_screen.dart';
 
-class SendScreen extends StatefulWidget {
+class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key});
 
   @override
-  State<SendScreen> createState() => _SendScreenState();
+  ConsumerState<SendScreen> createState() => _SendScreenState();
 }
 
-class _SendScreenState extends State<SendScreen>
+class _SendScreenState extends ConsumerState<SendScreen>
     with TickerProviderStateMixin {
   List<PlatformFile> _selectedFiles = [];
   bool _encryptEnabled = false;
-
-  String _transferMode = 'nearby'; // 'nearby' or 'longdistance'
-  bool _isGeneratingLink = false;
-  String? _roomCode;
+  String? _encryptionPin;
+  String _transferMode = 'nearby';
   late AnimationController _fadeController;
-  late TabController _tabController;
 
   @override
   void initState() {
@@ -43,7 +41,6 @@ class _SendScreenState extends State<SendScreen>
       duration: const Duration(milliseconds: 600),
       vsync: this,
     )..forward();
-    _tabController = TabController(length: 2, vsync: this);
   }
 
   Future<void> _loadDefaultSettings() async {
@@ -52,12 +49,8 @@ class _SendScreenState extends State<SendScreen>
       setState(() {
         _encryptEnabled = prefs.getBool('always_encrypt') ?? false;
         final mode = prefs.getString('transfer_mode') ?? 'Nearby (Wi-Fi Direct)';
-        _transferMode = mode == 'Nearby (Wi-Fi Direct)' 
-            ? 'nearby' 
-            : 'longdistance';
-        
-        // Sync tab selection with default transfer mode
-        _tabController.index = _transferMode == 'nearby' ? 0 : 1;
+        _transferMode =
+            mode == 'Nearby (Wi-Fi Direct)' ? 'nearby' : 'longdistance';
       });
     }
   }
@@ -89,27 +82,81 @@ class _SendScreenState extends State<SendScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ─── Mode Selector ─────────────────────
                 _buildModeSelector(),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-                // ─── File Picker ───────────────────────
+                // ─── Radar Quick-Connect Banner ─────────────────────
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const RadarDiscoveryScreen(isSender: true),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF00F2FE), Color(0xFF4FACFE)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primaryCyan.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.radar, color: Colors.white, size: 28),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Nearby Radar — AirDrop Mode',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Auto-discover devices • No QR needed • 0 data',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios_rounded,
+                            color: Colors.white70, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
                 _buildFilePicker(),
                 const SizedBox(height: 20),
-
-                // ─── Selected Files List ───────────────
                 if (_selectedFiles.isNotEmpty) ...[
                   _buildSelectedFiles(),
                   const SizedBox(height: 20),
                 ],
-
-                // ─── Encryption Toggle ─────────────────
                 _buildEncryptionToggle(),
                 const SizedBox(height: 24),
-
-                // ─── Action Button ─────────────────────
-                if (_selectedFiles.isNotEmpty)
-                  _buildActionSection(),
+                if (_selectedFiles.isNotEmpty) _buildActionSection(),
               ],
             ),
           ),
@@ -123,6 +170,11 @@ class _SendScreenState extends State<SendScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Transfer Mode', style: AppTypography.heading4),
+        const SizedBox(height: 8),
+        Text(
+          'Nearby = ShareIt speed on same Wi‑Fi • Long Distance = anywhere via link',
+          style: AppTypography.caption,
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -131,7 +183,7 @@ class _SendScreenState extends State<SendScreen>
                 'nearby',
                 'Nearby',
                 Icons.wifi_tethering_rounded,
-                'Wi-Fi Direct • Ultra Fast',
+                'Wi‑Fi Direct • Ultra Fast',
                 AppColors.sendGradient,
               ),
             ),
@@ -172,10 +224,7 @@ class _SendScreenState extends State<SendScreen>
           color: isSelected ? null : AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected
-                ? Colors.transparent
-                : AppColors.glassBorder,
-            width: 1,
+            color: isSelected ? Colors.transparent : AppColors.glassBorder,
           ),
           boxShadow: isSelected
               ? [
@@ -195,15 +244,12 @@ class _SendScreenState extends State<SendScreen>
             Icon(icon, color: Colors.white, size: 28),
             const SizedBox(height: 8),
             Text(title,
-                style: AppTypography.labelLarge
-                    .copyWith(color: Colors.white)),
+                style: AppTypography.labelLarge.copyWith(color: Colors.white)),
             const SizedBox(height: 4),
             Text(
               description,
               style: AppTypography.caption.copyWith(
-                color: isSelected
-                    ? Colors.white70
-                    : AppColors.textHint,
+                color: isSelected ? Colors.white70 : AppColors.textHint,
                 fontSize: 10,
               ),
               textAlign: TextAlign.center,
@@ -234,8 +280,9 @@ class _SendScreenState extends State<SendScreen>
             Text('Tap to Select Files', style: AppTypography.heading4),
             const SizedBox(height: 6),
             Text(
-              'Images, Videos, Documents, Any File',
+              'Photos, Videos, APK, Documents — multiple files supported',
               style: AppTypography.bodySmall,
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -258,26 +305,22 @@ class _SendScreenState extends State<SendScreen>
               onTap: () => setState(() => _selectedFiles.clear()),
               child: Text(
                 'Clear All',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.error,
-                ),
+                style: AppTypography.bodySmall.copyWith(color: AppColors.error),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
         ...List.generate(
-          _selectedFiles.length.clamp(0, 5),
+          _selectedFiles.length.clamp(0, 8),
           (index) => _buildFileItem(_selectedFiles[index]),
         ),
-        if (_selectedFiles.length > 5)
+        if (_selectedFiles.length > 8)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              '+${_selectedFiles.length - 5} more files',
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.primaryCyan,
-              ),
+              '+${_selectedFiles.length - 8} more files',
+              style: AppTypography.bodySmall.copyWith(color: AppColors.primaryCyan),
             ),
           ),
       ],
@@ -295,32 +338,24 @@ class _SendScreenState extends State<SendScreen>
       ),
       child: Row(
         children: [
-          Text(
-            FileUtils.getFileTypeIcon(file.name),
-            style: const TextStyle(fontSize: 24),
-          ),
+          Text(FileUtils.getFileTypeIcon(file.name),
+              style: const TextStyle(fontSize: 24)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  file.name,
-                  style: AppTypography.bodyMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  FileUtils.formatFileSize(file.size),
-                  style: AppTypography.caption,
-                ),
+                Text(file.name,
+                    style: AppTypography.bodyMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(FileUtils.formatFileSize(file.size),
+                    style: AppTypography.caption),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () {
-              setState(() => _selectedFiles.remove(file));
-            },
+            onTap: () => setState(() => _selectedFiles.remove(file)),
             child: const Icon(Icons.close_rounded,
                 color: AppColors.textHint, size: 20),
           ),
@@ -338,9 +373,7 @@ class _SendScreenState extends State<SendScreen>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              gradient: _encryptEnabled
-                  ? AppColors.vaultGradient
-                  : null,
+              gradient: _encryptEnabled ? AppColors.vaultGradient : null,
               color: _encryptEnabled ? null : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(12),
             ),
@@ -358,8 +391,8 @@ class _SendScreenState extends State<SendScreen>
                 Text('Lock with Password', style: AppTypography.labelLarge),
                 Text(
                   _encryptEnabled
-                      ? 'AES-256 Encryption • PIN Protected'
-                      : 'Files will be sent without encryption',
+                      ? 'AES-256 • Receiver needs PIN'
+                      : 'Send without encryption',
                   style: AppTypography.caption,
                 ),
               ],
@@ -379,11 +412,13 @@ class _SendScreenState extends State<SendScreen>
                 if (pin != null && pin.length == 4) {
                   setState(() {
                     _encryptEnabled = true;
+                    _encryptionPin = pin;
                   });
                 }
               } else {
                 setState(() {
                   _encryptEnabled = false;
+                  _encryptionPin = null;
                 });
               }
             },
@@ -396,119 +431,20 @@ class _SendScreenState extends State<SendScreen>
   }
 
   Widget _buildActionSection() {
-    if (_transferMode == 'nearby') {
-      return GradientButton(
-        label: 'Search Nearby Devices',
-        icon: Icons.wifi_tethering_rounded,
-        gradient: AppColors.sendGradient,
-        onPressed: _startNearbySearch,
-      );
-    } else {
-      return Column(
-        children: [
-          GradientButton(
-            label: 'Generate Sharing Code',
-            icon: Icons.qr_code_2_rounded,
-            gradient: AppColors.receiveGradient,
-            isLoading: _isGeneratingLink,
-            onPressed: _generateRoomCode,
-          ),
-          if (_roomCode != null) ...[
-            const SizedBox(height: 20),
-            _buildRoomCodeCard(),
-          ],
-        ],
-      );
-    }
-  }
+    final label = _transferMode == 'nearby'
+        ? 'Send via Nearby (ShareIt Mode)'
+        : 'Create Connection Link';
+    final icon = _transferMode == 'nearby'
+        ? Icons.wifi_tethering_rounded
+        : Icons.qr_code_2_rounded;
 
-  Widget _buildRoomCodeCard() {
-    return GlassCard(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          Text('Your Sharing Code', style: AppTypography.heading4),
-          const SizedBox(height: 16),
-          // Room Code Display
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.primaryCyan.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: _roomCode!.split('').map((c) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    c,
-                    style: AppTypography.heading2.copyWith(fontSize: 20),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // QR Code
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: QrImageView(
-              data: 'filesharepro://$_roomCode',
-              size: 160,
-              backgroundColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Share this code with receiver',
-            style: AppTypography.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: GradientButton(
-                  label: 'Share via WhatsApp',
-                  icon: Icons.share_rounded,
-                  height: 48,
-                  onPressed: _shareCode,
-                ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: _roomCode!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Code copied!')),
-                  );
-                },
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: const Icon(Icons.copy_rounded,
-                      color: AppColors.textSecondary, size: 20),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return GradientButton(
+      label: label,
+      icon: icon,
+      gradient: _transferMode == 'nearby'
+          ? AppColors.sendGradient
+          : AppColors.receiveGradient,
+      onPressed: _startTransfer,
     );
   }
 
@@ -522,93 +458,65 @@ class _SendScreenState extends State<SendScreen>
     }
   }
 
-  void _startNearbySearch() async {
+  Future<void> _startTransfer() async {
     HapticFeedback.mediumImpact();
-    
-    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
-    if (!hasPerm) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permissions required for Nearby Sharing')),
-        );
-      }
+
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Web preview: UI only. Full file sharing ke liye Android app install karein.',
+          ),
+        ),
+      );
       return;
     }
-    
-    // Start nearby hosting so receiver can discover us
-    final nearbyService = NearbyService();
-    nearbyService.startHosting(
-      deviceName: 'FileShare Pro',
-      onDeviceConnected: (deviceInfo) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Connected to ${deviceInfo['name'] ?? 'Device'}'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      },
-      onError: (error) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ $error'),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      },
+
+    if (_transferMode == 'nearby') {
+      final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
+      if (!hasPerm) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Permissions required for Nearby Sharing'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    final files = <File>[];
+    for (final pf in _selectedFiles) {
+      if (pf.path != null) files.add(File(pf.path!));
+    }
+    if (files.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No valid files to send')),
+      );
+      return;
+    }
+
+    final notifier = ref.read(transferStateProvider.notifier);
+    notifier.setMode(
+      _transferMode == 'nearby'
+          ? TransferMode.nearby
+          : TransferMode.longDistance,
     );
-    
+    notifier.setEncryption(
+      enabled: _encryptEnabled,
+      pin: _encryptionPin,
+    );
+
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('📡 Broadcasting... Waiting for receiver to connect'),
-        backgroundColor: AppColors.surface,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const TransferProgressScreen(isSender: true),
       ),
     );
-  }
 
-  void _generateRoomCode() {
-    setState(() => _isGeneratingLink = true);
-
-    // Generate 6-character room code using cryptographic randomness
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final random = Random.secure();
-    final code = String.fromCharCodes(
-      List.generate(6, (_) {
-        return chars.codeUnitAt(random.nextInt(chars.length));
-      }),
-    );
-
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted) {
-        setState(() {
-          _roomCode = code;
-          _isGeneratingLink = false;
-        });
-      }
-    });
-  }
-
-  void _shareCode() {
-    final message = '🔗 FileShare Pro\n\n'
-        'I want to send you files securely!\n'
-        '📥 Code: $_roomCode\n\n'
-        'Open FileShare Pro app → Receive → Enter this code\n\n'
-        'Don\'t have the app? Download here:\n'
-        'https://play.google.com/store/apps/details?id=com.fileshare.pro';
-
-    Share.share(message, subject: 'FileShare Pro Invite');
+    await notifier.startSending(files);
   }
 }

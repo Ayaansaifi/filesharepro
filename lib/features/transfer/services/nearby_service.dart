@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -23,6 +22,7 @@ class NearbyService {
   ValueChanged<String>? onTransferComplete;
   ValueChanged<String>? onError;
   ValueChanged<String>? onStatusChange;
+  VoidCallback? onDisconnected;
 
   bool _isDiscovering = false;
   bool _isAdvertising = false;
@@ -38,6 +38,8 @@ class NearbyService {
   bool get isAdvertising => _isAdvertising;
   bool get isTransferring => _isTransferring;
   bool get isConnected => _connectedEndpointId != null;
+
+  Completer<bool>? _connectionCompleter;
 
   // ─── Permissions ────────────────────────────────────────
 
@@ -116,6 +118,7 @@ class NearbyService {
         onDisconnected: (id) {
           _connectedEndpointId = null;
           onStatusChange?.call('Device disconnected');
+          onDisconnected?.call();
         },
       );
 
@@ -184,6 +187,8 @@ class NearbyService {
     try {
       onStatusChange?.call('Connecting...');
 
+      _connectionCompleter = Completer<bool>();
+
       await _nearby.requestConnection(
         'filesharepro_receiver',
         endpointId,
@@ -203,20 +208,37 @@ class NearbyService {
           if (status == Status.CONNECTED) {
             _connectedEndpointId = id;
             onStatusChange?.call('Connected!');
+            if (_connectionCompleter != null &&
+                !_connectionCompleter!.isCompleted) {
+              _connectionCompleter!.complete(true);
+            }
           } else {
             onStatusChange?.call('Connection rejected');
+            if (_connectionCompleter != null &&
+                !_connectionCompleter!.isCompleted) {
+              _connectionCompleter!.complete(false);
+            }
           }
         },
         onDisconnected: (id) {
           _connectedEndpointId = null;
           onStatusChange?.call('Disconnected');
+          onDisconnected?.call();
         },
       );
 
-      return true;
+      return await _connectionCompleter!.future.timeout(
+        const Duration(seconds: AppConstants.connectionTimeoutSec),
+        onTimeout: () {
+          onError?.call('Connection timed out');
+          return false;
+        },
+      );
     } catch (e) {
       onError?.call('Connection failed: $e');
       return false;
+    } finally {
+      _connectionCompleter = null;
     }
   }
 
@@ -332,8 +354,13 @@ class NearbyService {
   Future<bool> _finalizeReceivedFile(PayloadTransferUpdate update) async {
     try {
       final downloadDir = await FileUtils.getReceivedDir();
-      final targetName = _currentFileName ?? 'received_${DateTime.now().millisecondsSinceEpoch}';
-      final targetPath = '${downloadDir.path}/$targetName';
+      final targetName = FileUtils.sanitizeFileName(
+        _currentFileName ?? 'received_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      final targetPath = await FileUtils.uniqueFilePath(
+        downloadDir.path,
+        targetName,
+      );
 
       // Nearby Connections saves the file with the payload ID as the filename
       // in the Downloads directory or app cache
@@ -351,9 +378,8 @@ class NearbyService {
         }
       }
 
-      // If we can't find the temp file, try using the file's uri
-      onStatusChange?.call('File saved to Downloads');
-      return true;
+      onError?.call('Received file could not be located on device');
+      return false;
     } catch (e) {
       debugPrint('Failed to finalize received file: $e');
       onError?.call('File saved but could not be moved: $e');

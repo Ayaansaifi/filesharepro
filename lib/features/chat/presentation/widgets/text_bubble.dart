@@ -31,18 +31,20 @@ class TextBubble extends StatelessWidget {
             maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
           decoration: BoxDecoration(
-            color: isSent ? AppColors.primaryCyan : AppColors.surfaceLight,
+            color: isSent
+                ? AppColors.whatsAppSentBubble
+                : AppColors.whatsAppReceivedBubble,
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(isSent ? 16 : 4),
-              bottomRight: Radius.circular(isSent ? 4 : 16),
+              topLeft: const Radius.circular(8),
+              topRight: const Radius.circular(8),
+              bottomLeft: Radius.circular(isSent ? 8 : 2),
+              bottomRight: Radius.circular(isSent ? 2 : 8),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
@@ -60,11 +62,11 @@ class TextBubble extends StatelessWidget {
                 },
                 text: message.textContent ?? '',
                 style: AppTypography.bodyMedium.copyWith(
-                  color: isSent ? Colors.white : AppColors.textPrimary,
-                  height: 1.3,
+                  color: AppColors.textPrimary,
+                  height: 1.35,
                 ),
-                linkStyle: TextStyle(
-                  color: isSent ? Colors.white : AppColors.primaryCyan,
+                linkStyle: const TextStyle(
+                  color: AppColors.primaryBlue,
                   decoration: TextDecoration.underline,
                 ),
               ),
@@ -74,11 +76,9 @@ class TextBubble extends StatelessWidget {
                 children: [
                   Text(
                     timeStr,
-                    style: TextStyle(
-                      color: isSent
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : AppColors.textHint,
-                      fontSize: 10,
+                    style: const TextStyle(
+                      color: AppColors.textHint,
+                      fontSize: 11,
                     ),
                   ),
                   if (isSent) ...[

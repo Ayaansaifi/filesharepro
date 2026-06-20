@@ -35,6 +35,8 @@ class _VaultScreenState extends State<VaultScreen>
   String? _currentPin;
   List<VaultItem> _items = [];
   Map<String, dynamic> _stats = {};
+  String _filter = 'all';
+  bool _showRestoreBanner = false;
   late AnimationController _lockAnimController;
 
   @override
@@ -78,12 +80,14 @@ class _VaultScreenState extends State<VaultScreen>
   }
 
   Future<void> _checkVaultSetup() async {
+    final onDisk = await _vaultService.hasExistingVaultOnDisk();
     final setup = await _vaultService.isVaultSetup();
     final bioEnabled = await _vaultService.isBiometricEnabled();
     setState(() {
       _isSetup = setup;
       _isBiometricEnabled = bioEnabled;
       _isLoading = false;
+      _showRestoreBanner = onDisk && !setup;
     });
     
     // Auto-attempt biometric if vault is setup and biometric is enabled
@@ -156,7 +160,7 @@ class _VaultScreenState extends State<VaultScreen>
               ? const Center(
                   child: CircularProgressIndicator(color: AppColors.primaryCyan))
               : !_isSetup
-                  ? _buildSetupScreen()
+                  ? (_showRestoreBanner ? _buildRestoreScreen() : _buildSetupScreen())
                   : _isLocked
                       ? _buildLockScreen()
                       : _buildVaultContent(),
@@ -165,163 +169,323 @@ class _VaultScreenState extends State<VaultScreen>
     );
   }
 
-  // ─── Setup Screen (First Time) ───────────────────────────
-
-  Widget _buildSetupScreen() {
+  Widget _buildRestoreScreen() {
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _AnimatedLockIcon(controller: _lockAnimController),
-          const SizedBox(height: 32),
-          Text('Setup Your Vault', style: AppTypography.heading2),
+          const Icon(Icons.cloud_done_rounded, color: AppColors.primaryCyan, size: 72),
+          const SizedBox(height: 24),
+          Text('Vault Found on Device', style: AppTypography.heading2),
           const SizedBox(height: 12),
           Text(
-            'Create a secure, encrypted space to store your\nprivate files. Protected with military-grade AES-256.',
+            'Your encrypted files are still saved on this phone.\nEnter your old vault PIN to restore access.',
             style: AppTypography.bodySmall,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
           GradientButton(
-            label: 'Create Vault PIN',
-            icon: Icons.lock_rounded,
+            label: 'Restore with PIN',
+            icon: Icons.lock_open_rounded,
             gradient: AppColors.vaultGradient,
-            onPressed: _setupVaultPin,
+            onPressed: () async {
+              await _vaultService.isVaultSetup();
+              _unlockVault();
+            },
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.shield_rounded,
-                  color: AppColors.success, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                'AES-256 Encryption • Hidden from Gallery',
-                style: AppTypography.caption,
-              ),
-            ],
-          ),
-          if (_isBiometricAvailable) ...[
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        ],
+      ),
+    );
+  }
+
+  // ─── Setup Screen (First Time) ───────────────────────────
+
+  Widget _buildSetupScreen() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Premium gradient header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 60, 24, 40),
+            decoration: const BoxDecoration(
+              gradient: AppColors.vaultGradient,
+              borderRadius:
+                  BorderRadius.vertical(bottom: Radius.circular(32)),
+            ),
+            child: Column(
               children: [
-                const Icon(Icons.fingerprint_rounded,
-                    color: AppColors.primaryCyan, size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  'Fingerprint unlock available',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.primaryCyan,
+                _AnimatedLockIcon(controller: _lockAnimController),
+                const SizedBox(height: 20),
+                const Text(
+                  'Secure Vault',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
                   ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Military-grade encryption for your private files',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
-          ],
+          ),
+          const SizedBox(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                // Security features list
+                _buildFeatureRow(Icons.lock_rounded, 'AES-256 Encryption',
+                    'Files are encrypted before being stored'),
+                const SizedBox(height: 16),
+                _buildFeatureRow(Icons.visibility_off_rounded,
+                    'Hidden from Gallery',
+                    'Files invisible to other apps and gallery'),
+                const SizedBox(height: 16),
+                _buildFeatureRow(Icons.fingerprint_rounded,
+                    'Biometric Support',
+                    'Unlock with fingerprint for quick access'),
+                const SizedBox(height: 16),
+                _buildFeatureRow(Icons.storage_rounded, 'Offline Storage',
+                    'Files stay safe even without internet'),
+                const SizedBox(height: 36),
+                GradientButton(
+                  label: 'Create Vault PIN',
+                  icon: Icons.lock_rounded,
+                  gradient: AppColors.vaultGradient,
+                  onPressed: _setupVaultPin,
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.security_rounded,
+                          color: AppColors.success, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Your files never leave your device',
+                        style: AppTypography.caption
+                            .copyWith(color: AppColors.success),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFeatureRow(IconData icon, String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            gradient: AppColors.vaultGradient,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: AppTypography.labelLarge.copyWith(fontSize: 14)),
+              Text(subtitle, style: AppTypography.caption),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   // ─── Lock Screen with Fingerprint ────────────────────────
 
   Widget _buildLockScreen() {
-    return Padding(
-      padding: const EdgeInsets.all(32),
+    return SingleChildScrollView(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _AnimatedLockIcon(controller: _lockAnimController),
-          const SizedBox(height: 32),
-          Text('Vault Locked', style: AppTypography.heading2),
-          const SizedBox(height: 12),
-          Text(
-            'Enter your PIN or use fingerprint to unlock',
-            style: AppTypography.bodySmall,
-          ),
-          const SizedBox(height: 40),
-          
-          // PIN Unlock Button
-          GradientButton(
-            label: 'Unlock with PIN',
-            icon: Icons.dialpad_rounded,
-            gradient: AppColors.vaultGradient,
-            onPressed: _unlockVault,
-          ),
-          
-          // Fingerprint Unlock Button
-          if (_isBiometricAvailable && _isBiometricEnabled) ...[
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: _unlockWithBiometric,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.primaryCyan.withValues(alpha: 0.2),
-                            AppColors.primaryPurple.withValues(alpha: 0.2),
+          // Gradient header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 60, 24, 40),
+            decoration: const BoxDecoration(
+              gradient: AppColors.vaultGradient,
+              borderRadius:
+                  BorderRadius.vertical(bottom: Radius.circular(36)),
+            ),
+            child: Column(
+              children: [
+                AppAnimatedBuilder(
+                  listenable: _lockAnimController,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: 1.0 + (_lockAnimController.value * 0.04),
+                      child: Container(
+                        width: 90,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white
+                                  .withValues(alpha: 0.2 * _lockAnimController.value),
+                              blurRadius: 24,
+                              spreadRadius: 6,
+                            ),
                           ],
                         ),
-                        border: Border.all(
-                          color: AppColors.primaryCyan.withValues(alpha: 0.5),
-                          width: 2,
-                        ),
+                        child: const Icon(Icons.lock_rounded,
+                            color: Colors.white, size: 44),
                       ),
-                      child: const Icon(
-                        Icons.fingerprint_rounded,
-                        color: AppColors.primaryCyan,
-                        size: 40,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Tap to use Fingerprint',
-                      style: AppTypography.labelMedium.copyWith(
-                        color: AppColors.primaryCyan,
+                    );
+                  },
+                  child: const SizedBox(),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Vault Locked',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Enter PIN or use fingerprint to unlock',
+                  style:
+                      TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 36),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              children: [
+                // PIN unlock
+                GradientButton(
+                  label: 'Unlock with PIN',
+                  icon: Icons.dialpad_rounded,
+                  gradient: AppColors.vaultGradient,
+                  onPressed: _unlockVault,
+                ),
+
+                // Fingerprint
+                if (_isBiometricAvailable &&
+                    _isBiometricEnabled) ...
+                  [
+                    const SizedBox(height: 24),
+                    GestureDetector(
+                      onTap: _unlockWithBiometric,
+                      child: Column(
+                        children: [
+                          AppAnimatedBuilder(
+                            listenable: _lockAnimController,
+                            builder: (ctx, child) {
+                              return Container(
+                                width: 76,
+                                height: 76,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppColors.accentPink
+                                          .withValues(alpha: 0.2),
+                                      AppColors.accentOrange
+                                          .withValues(alpha: 0.2),
+                                    ],
+                                  ),
+                                  border: Border.all(
+                                    color: AppColors.accentPink
+                                        .withValues(alpha: 0.5 +
+                                            _lockAnimController.value *
+                                                0.4),
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.accentPink
+                                          .withValues(
+                                              alpha: 0.15 *
+                                                  _lockAnimController
+                                                      .value),
+                                      blurRadius: 20,
+                                      spreadRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                    Icons.fingerprint_rounded,
+                                    color: AppColors.accentPink,
+                                    size: 40),
+                              );
+                            },
+                            child: const SizedBox(),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Touch to unlock',
+                            style: AppTypography.labelMedium.copyWith(
+                                color: AppColors.accentPink),
+                          ),
+                        ],
                       ),
                     ),
                   ],
+
+                if (_isBiometricAvailable && !_isBiometricEnabled) ...
+                  [
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: () => _showSnackBar(
+                          'Unlock with PIN first, then enable fingerprint'),
+                      icon: const Icon(Icons.fingerprint_rounded,
+                          color: AppColors.textHint, size: 20),
+                      label: Text(
+                        'Enable Fingerprint Unlock',
+                        style: AppTypography.caption
+                            .copyWith(color: AppColors.textHint),
+                      ),
+                    ),
+                  ],
+
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _forgotPin,
+                  child: Text(
+                    'Forgot PIN? Reset Vault',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.primaryCyan,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
-          
-          // Enable biometric option (if available but not enabled)
-          if (_isBiometricAvailable && !_isBiometricEnabled) ...[
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: () async {
-                // Must unlock with PIN first before enabling biometric
-                _showSnackBar('Unlock with PIN first, then enable fingerprint in settings');
-              },
-              icon: const Icon(Icons.fingerprint_rounded, 
-                  color: AppColors.textHint, size: 20),
-              label: Text(
-                'Enable Fingerprint Unlock',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textHint,
-                ),
-              ),
-            ),
-          ],
-          
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: _forgotPin,
-            child: Text(
-              'Forgot PIN?',
-              style: AppTypography.caption.copyWith(
-                color: AppColors.primaryCyan,
-                decoration: TextDecoration.underline,
-              ),
+                const SizedBox(height: 32),
+              ],
             ),
           ),
         ],
@@ -416,13 +580,52 @@ class _VaultScreenState extends State<VaultScreen>
         ),
         const SizedBox(height: 16),
 
+        // Filter chips
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip('all', 'All'),
+                _filterChip('image', 'Photos'),
+                _filterChip('video', 'Videos'),
+                _filterChip('document', 'Docs'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
         // Files Grid
         Expanded(
-          child: _items.isEmpty
+          child: _filteredItems.isEmpty
               ? _buildEmptyVault()
               : _buildVaultGrid(),
         ),
       ],
+    );
+  }
+
+  List<VaultItem> get _filteredItems {
+    if (_filter == 'all') return _items;
+    return _items.where((i) => i.fileType == _filter).toList();
+  }
+
+  Widget _filterChip(String key, String label) {
+    final selected = _filter == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => setState(() => _filter = key),
+        selectedColor: AppColors.primaryCyan.withValues(alpha: 0.3),
+        checkmarkColor: AppColors.primaryCyan,
+        labelStyle: TextStyle(
+          color: selected ? AppColors.primaryCyan : AppColors.textSecondary,
+        ),
+      ),
     );
   }
 
@@ -475,9 +678,9 @@ class _VaultScreenState extends State<VaultScreen>
         mainAxisSpacing: 8,
         childAspectRatio: 0.85,
       ),
-      itemCount: _items.length,
+      itemCount: _filteredItems.length,
       itemBuilder: (context, index) {
-        final item = _items[index];
+        final item = _filteredItems[index];
         return _buildVaultItemCard(item);
       },
     );
@@ -687,7 +890,14 @@ class _VaultScreenState extends State<VaultScreen>
         final success = await _vaultService.resetPinWithRecovery(answer, newPin);
         if (mounted) {
           if (success) {
-            _showSnackBar('✅ Vault PIN reset successfully!');
+            setState(() {
+              _isLocked = false;
+              _isSetup = true;
+              _currentPin = newPin;
+              _showRestoreBanner = false;
+            });
+            _loadVaultItems();
+            _showSnackBar('✅ Vault PIN reset — you are unlocked!');
           } else {
             _showSnackBar('❌ Incorrect security answer or recovery data not found.', isError: true);
           }
@@ -887,18 +1097,46 @@ class _VaultScreenState extends State<VaultScreen>
               },
             ),
             _buildOptionTile(
-              icon: Icons.save_alt_rounded,
-              label: 'Export to Gallery',
+              icon: Icons.drive_file_rename_outline_rounded,
+              label: 'Rename',
+              onTap: () async {
+                Navigator.pop(ctx);
+                final controller = TextEditingController(text: item.originalName);
+                final newName = await showDialog<String>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    backgroundColor: AppColors.surface,
+                    title: const Text('Rename File'),
+                    content: TextField(
+                      controller: controller,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(hintText: 'New name'),
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, controller.text.trim()),
+                        child: const Text('Save', style: TextStyle(color: AppColors.primaryCyan)),
+                      ),
+                    ],
+                  ),
+                );
+                if (newName != null && newName.isNotEmpty) {
+                  await _vaultService.renameVaultItem(item.id, newName);
+                  _loadVaultItems();
+                }
+              },
+            ),
+            _buildOptionTile(
+              icon: Icons.photo_library_rounded,
+              label: 'Move to Gallery (Keep in Vault)',
               onTap: () async {
                 Navigator.pop(ctx);
                 if (_currentPin != null) {
-                  final exported = await _vaultService.exportFromVault(
-                      item, _currentPin!);
+                  final exported = await _vaultService.exportFromVault(item, _currentPin!);
                   if (mounted) {
                     _showSnackBar(
-                      exported != null
-                          ? '✅ Exported: ${item.originalName}'
-                          : '❌ Export failed',
+                      exported != null ? '✅ Saved to gallery: ${item.originalName}' : '❌ Export failed',
                       isError: exported == null,
                     );
                   }
@@ -906,8 +1144,30 @@ class _VaultScreenState extends State<VaultScreen>
               },
             ),
             _buildOptionTile(
+              icon: Icons.unarchive_rounded,
+              label: 'Restore to Phone & Remove from Vault',
+              onTap: () async {
+                Navigator.pop(ctx);
+                if (_currentPin != null) {
+                  final exported = await _vaultService.exportFromVault(
+                    item,
+                    _currentPin!,
+                    removeFromVaultAfter: true,
+                  );
+                  if (mounted) {
+                    if (exported != null) {
+                      _showSnackBar('✅ Restored to phone & removed from vault');
+                      _loadVaultItems();
+                    } else {
+                      _showSnackBar('❌ Restore failed', isError: true);
+                    }
+                  }
+                }
+              },
+            ),
+            _buildOptionTile(
               icon: Icons.delete_rounded,
-              label: 'Delete from Vault',
+              label: 'Delete Permanently',
               color: AppColors.error,
               onTap: () async {
                 Navigator.pop(ctx);

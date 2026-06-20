@@ -1,30 +1,32 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/gradient_button.dart';
+import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/app_animated_builder.dart';
-import '../services/nearby_service.dart';
-import '../services/signaling_service.dart';
-import '../services/webrtc_service.dart';
 import '../../../core/utils/permission_utils.dart';
+import '../providers/transfer_provider.dart';
+import 'transfer_progress_screen.dart';
+import 'radar_discovery_screen.dart';
 
-class ReceiveScreen extends StatefulWidget {
+class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
 
   @override
-  State<ReceiveScreen> createState() => _ReceiveScreenState();
+  ConsumerState<ReceiveScreen> createState() => _ReceiveScreenState();
 }
 
-class _ReceiveScreenState extends State<ReceiveScreen>
+class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
     with TickerProviderStateMixin {
-  String _receiveMode = 'code'; // 'code', 'qr', 'nearby'
-  final _codeController = TextEditingController();
+  String _receiveMode = 'nearby';
+  final _linkController = TextEditingController();
+  final _pinController = TextEditingController();
   bool _isConnecting = false;
-  String _connectionStatus = '';
-  bool _isNearbySearching = false;
-  NearbyService? _nearbyService;
+  bool _nearbyStarted = false;
   late AnimationController _pulseController;
 
   @override
@@ -34,17 +36,24 @@ class _ReceiveScreenState extends State<ReceiveScreen>
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startNearbyDiscovery();
+      _nearbyStarted = true;
+    });
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _codeController.dispose();
+    _linkController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final transferState = ref.watch(transferStateProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -62,14 +71,12 @@ class _ReceiveScreenState extends State<ReceiveScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ─── Receive Mode Tabs ───────────────────
               _buildModeTabs(),
               const SizedBox(height: 24),
-
-              // ─── Content based on mode ───────────────
-              if (_receiveMode == 'code') _buildCodeEntry(),
+              if (_receiveMode == 'link') _buildLinkEntry(),
               if (_receiveMode == 'qr') _buildQrScanner(),
-              if (_receiveMode == 'nearby') _buildNearbyWaiting(),
+              if (_receiveMode == 'nearby')
+                _buildNearbySection(transferState.discoveredDevices),
             ],
           ),
         ),
@@ -87,9 +94,9 @@ class _ReceiveScreenState extends State<ReceiveScreen>
       ),
       child: Row(
         children: [
-          _buildTab('code', 'Enter Code', Icons.dialpad_rounded),
-          _buildTab('qr', 'Scan QR', Icons.qr_code_scanner_rounded),
           _buildTab('nearby', 'Nearby', Icons.wifi_tethering_rounded),
+          _buildTab('link', 'Paste Link', Icons.link_rounded),
+          _buildTab('qr', 'Scan QR', Icons.qr_code_scanner_rounded),
         ],
       ),
     );
@@ -101,7 +108,15 @@ class _ReceiveScreenState extends State<ReceiveScreen>
       child: GestureDetector(
         onTap: () {
           HapticFeedback.selectionClick();
-          setState(() => _receiveMode = mode);
+          setState(() {
+            _receiveMode = mode;
+            if (mode == 'nearby' && !_nearbyStarted) {
+              _nearbyStarted = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _startNearbyDiscovery();
+              });
+            }
+          });
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 250),
@@ -114,14 +129,16 @@ class _ReceiveScreenState extends State<ReceiveScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon,
-                  color: isActive ? Colors.white : AppColors.textHint,
-                  size: 18),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: AppTypography.labelMedium.copyWith(
-                  color: isActive ? Colors.white : AppColors.textHint,
-                  fontSize: 12,
+                  color: isActive ? Colors.white : AppColors.textHint, size: 18),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: isActive ? Colors.white : AppColors.textHint,
+                    fontSize: 11,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -131,10 +148,9 @@ class _ReceiveScreenState extends State<ReceiveScreen>
     );
   }
 
-  Widget _buildCodeEntry() {
+  Widget _buildLinkEntry() {
     return Column(
       children: [
-        // Illustration
         _PulseAnimation(
           controller: _pulseController,
           child: Container(
@@ -143,71 +159,70 @@ class _ReceiveScreenState extends State<ReceiveScreen>
             decoration: BoxDecoration(
               gradient: AppColors.receiveGradient,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryPurple.withValues(alpha: 0.3),
-                  blurRadius: 30,
-                  spreadRadius: 5,
-                ),
-              ],
             ),
             child: const Icon(Icons.download_rounded,
                 color: Colors.white, size: 44),
           ),
         ),
         const SizedBox(height: 24),
-
-        Text('Enter Sharing Code', style: AppTypography.heading3),
+        Text('Paste Sender Link', style: AppTypography.heading3),
         const SizedBox(height: 8),
         Text(
-          'Ask the sender for their 6-digit code',
+          'Sender shares a link via WhatsApp/SMS — paste it here',
           style: AppTypography.bodySmall,
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-
-        // Code Input
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.glassBorder),
           ),
           child: TextField(
-            controller: _codeController,
-            textAlign: TextAlign.center,
-            maxLength: 6,
-            style: AppTypography.heading2.copyWith(
-              letterSpacing: 8,
-              fontSize: 28,
-            ),
+            controller: _linkController,
+            maxLines: 4,
+            minLines: 2,
+            style: AppTypography.bodySmall,
             decoration: InputDecoration(
               border: InputBorder.none,
-              counterText: '',
-              hintText: '------',
-              hintStyle: AppTypography.heading2.copyWith(
+              hintText: 'filesharepro://CODE#...',
+              hintStyle: AppTypography.bodySmall.copyWith(
                 color: AppColors.textHint,
-                letterSpacing: 8,
-                fontSize: 28,
               ),
             ),
-            textCapitalization: TextCapitalization.characters,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
-              UpperCaseTextFormatter(),
-            ],
-            onChanged: (val) => setState(() {}),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: TextField(
+            controller: _pinController,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            maxLength: 8,
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              counterText: '',
+              hintText: 'Decrypt PIN (if sender encrypted)',
+              prefixIcon: Icon(Icons.lock_outline, size: 20),
+            ),
           ),
         ),
         const SizedBox(height: 24),
-
         GradientButton(
-          label: _connectionStatus.isNotEmpty ? _connectionStatus : 'Connect',
+          label: 'Connect & Receive',
           icon: Icons.link_rounded,
           gradient: AppColors.receiveGradient,
           isLoading: _isConnecting,
-          enabled: _codeController.text.length == 6,
-          onPressed: _connectWithCode,
+          enabled: _linkController.text.trim().isNotEmpty,
+          onPressed: _connectWithLink,
         ),
       ],
     );
@@ -216,30 +231,25 @@ class _ReceiveScreenState extends State<ReceiveScreen>
   Widget _buildQrScanner() {
     return Column(
       children: [
-        Text('Scan Sender\'s QR Code', style: AppTypography.heading3),
+        Text('Scan Sender QR', style: AppTypography.heading3),
         const SizedBox(height: 8),
         Text(
-          'Point your camera at the QR code shown on sender\'s screen',
+          'Point camera at sender\'s QR code on Transfer screen',
           style: AppTypography.bodySmall,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-
-        // QR Scanner
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: SizedBox(
             height: 300,
             child: MobileScanner(
               onDetect: (capture) {
-                final barcodes = capture.barcodes;
-                for (final barcode in barcodes) {
+                for (final barcode in capture.barcodes) {
                   final value = barcode.rawValue;
                   if (value != null && value.startsWith('filesharepro://')) {
-                    final code = value.replaceFirst('filesharepro://', '');
-                    _codeController.text = code;
-                    setState(() => _receiveMode = 'code');
-                    _connectWithCode();
+                    _linkController.text = value;
+                    _connectWithLink();
                     break;
                   }
                 }
@@ -247,230 +257,219 @@ class _ReceiveScreenState extends State<ReceiveScreen>
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        Text(
-          'QR code will be automatically detected',
-          style: AppTypography.caption,
-        ),
       ],
     );
   }
 
-  Widget _buildNearbyWaiting() {
-    // Start discovery when this tab is shown
-    if (!_isNearbySearching) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _startNearbyDiscovery());
-    }
+  Widget _buildNearbySection(List devices) {
     return Column(
       children: [
-        const SizedBox(height: 40),
+        const SizedBox(height: 16),
         _PulseAnimation(
           controller: _pulseController,
           child: Container(
-            width: 120,
-            height: 120,
+            width: 100,
+            height: 100,
             decoration: BoxDecoration(
               gradient: AppColors.sendGradient,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryCyan.withValues(alpha: 0.3),
-                  blurRadius: 40,
-                  spreadRadius: 10,
-                ),
-              ],
             ),
             child: const Icon(Icons.wifi_tethering_rounded,
-                color: Colors.white, size: 50),
+                color: Colors.white, size: 44),
           ),
         ),
-        const SizedBox(height: 32),
-
-        Text('Waiting for Sender', style: AppTypography.heading3),
+        const SizedBox(height: 24),
+        Text('Nearby Devices', style: AppTypography.heading3),
         const SizedBox(height: 8),
         Text(
-          'Make sure both devices are on the same network\nor within Wi-Fi Direct range',
+          'Tap a sender — works like ShareIt on same Wi‑Fi',
           style: AppTypography.bodySmall,
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
 
-        // Animated dots
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(3, (i) {
-            return AppAnimatedBuilder(
-              listenable: _pulseController,
-              builder: (context, child) {
-                final delay = i * 0.3;
-                final value = (_pulseController.value + delay) % 1.0;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.primaryCyan.withValues(alpha: 0.3 + value * 0.7),
-                  ),
-                );
-              },
+        // ─── Radar Banner ────────────────────────────────
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const RadarDiscoveryScreen(isSender: false),
+              ),
             );
-          }),
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6C5CE7), Color(0xFF00D4FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryPurple.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.radar, color: Colors.white, size: 26),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Open Radar — Visual Discovery',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        'See senders on animated radar • Tap to connect',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded,
+                    color: Colors.white70, size: 14),
+              ],
+            ),
+          ),
         ),
+
+        if (devices.isEmpty)
+          GlassCard(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                const Icon(Icons.search_rounded,
+                    color: AppColors.textHint, size: 40),
+                const SizedBox(height: 12),
+                Text('Searching for senders...',
+                    style: AppTypography.bodySmall),
+                const SizedBox(height: 16),
+                GradientButton(
+                  label: 'Refresh Search',
+                  icon: Icons.refresh_rounded,
+                  height: 44,
+                  onPressed: _startNearbyDiscovery,
+                ),
+              ],
+            ),
+          )
+        else
+          ...devices.map((device) => _buildDeviceTile(device)),
       ],
     );
   }
 
-  void _connectWithCode() {
-    if (_codeController.text.length != 6) return;
-    setState(() {
-      _isConnecting = true;
-      _connectionStatus = 'Looking up room code...';
-    });
-    HapticFeedback.mediumImpact();
-
-    // Use signaling service to look up and connect
-    final signaling = SignalingService();
-    final webrtc = WebRTCService();
-    
-    () async {
-      try {
-        final roomCode = _codeController.text.trim().toUpperCase();
-        setState(() => _connectionStatus = 'Connecting to $roomCode...');
-        
-        // Try to get signal data for this room
-        final signalData = await signaling.getSignalData(roomCode);
-        
-        if (signalData != null) {
-          setState(() => _connectionStatus = 'Found room! Creating connection...');
-          
-          final unpacked = signaling.unpackageSignalData(signalData);
-          if (unpacked != null) {
-            final answer = await webrtc.createAnswer(unpacked['sdp']);
-            if (answer != null) {
-              final answerData = signaling.packageSignalData(
-                type: 'answer',
-                sdp: answer,
-              );
-              await signaling.storeSignalData('${roomCode}_answer', answerData);
-              
-              setState(() => _connectionStatus = 'Connected! Waiting for files...');
-              
-              webrtc.onTransferComplete = (fileName) {
-                if (mounted) {
-                  setState(() {
-                    _isConnecting = false;
-                    _connectionStatus = '';
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('✅ Received: $fileName'),
-                      backgroundColor: AppColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    ),
-                  );
-                }
-              };
-              
-              webrtc.onTransferProgress = (progress) {
-                if (mounted) {
-                  setState(() {
-                    _connectionStatus = 'Receiving: ${(progress * 100).toStringAsFixed(0)}%';
-                  });
-                }
-              };
-              
-              return;
-            }
-          }
-        }
-        
-        // If we get here, connection failed
-        if (mounted) {
-          setState(() {
-            _isConnecting = false;
-            _connectionStatus = '';
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Room not found. Ask sender for a new code.'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+  Widget _buildDeviceTile(dynamic device) {
+    return GestureDetector(
+      onTap: () => _connectNearby(device.address as String),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.glassBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: AppColors.sendGradient,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.smartphone_rounded, color: Colors.white),
             ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _isConnecting = false;
-            _connectionStatus = '';
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Connection error: $e'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(device.name as String, style: AppTypography.labelLarge),
+                  Text('Tap to receive files',
+                      style: AppTypography.caption),
+                ],
+              ),
             ),
-          );
-        }
-      }
-    }();
-  }
-
-  void _startNearbyDiscovery() async {
-    if (_isNearbySearching) return;
-    
-    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
-    if (!hasPerm) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permissions required for Nearby Sharing')),
-        );
-      }
-      return;
-    }
-    
-    _nearbyService = NearbyService();
-    setState(() => _isNearbySearching = true);
-    
-    _nearbyService!.startDiscovery(
-      onDeviceFound: (deviceInfo) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('📱 Found: ${deviceInfo['name'] ?? 'Device'}'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            ),
-          );
-        }
-      },
-      onError: (error) {
-        if (mounted) {
-          setState(() => _isNearbySearching = false);
-        }
-      },
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.primaryCyan),
+          ],
+        ),
+      ),
     );
   }
-}
 
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
+  Future<void> _startNearbyDiscovery() async {
+    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
+    if (!hasPerm) return;
+
+    await ref.read(transferStateProvider.notifier).startNearbyDiscovery();
+  }
+
+  Future<void> _connectNearby(String endpointId) async {
+    if (kIsWeb) {
+      _showWebOnlyMessage();
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const TransferProgressScreen(isSender: false),
+      ),
+    );
+    await ref.read(transferStateProvider.notifier).startNearbyReceive(endpointId);
+  }
+
+  Future<void> _connectWithLink() async {
+    if (kIsWeb) {
+      _showWebOnlyMessage();
+      return;
+    }
+    final link = _linkController.text.trim();
+    if (link.isEmpty) return;
+
+    setState(() => _isConnecting = true);
+    HapticFeedback.mediumImpact();
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const TransferProgressScreen(isSender: false),
+      ),
+    );
+
+    ref.read(transferStateProvider.notifier).setReceiverDecryptPin(
+      _pinController.text.trim().isEmpty ? null : _pinController.text.trim(),
+    );
+    await ref.read(transferStateProvider.notifier).startWebRTCReceiveFromLink(link);
+    if (mounted) setState(() => _isConnecting = false);
+  }
+  void _showWebOnlyMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Long-distance/Nearby sharing Android app par available hai.'),
+      ),
     );
   }
 }

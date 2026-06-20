@@ -379,7 +379,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen>
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: cat.features.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final delay = (index * 0.1).clamp(0.0, 1.0);
           return TweenAnimationBuilder<double>(

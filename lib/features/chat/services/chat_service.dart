@@ -11,11 +11,10 @@ import '../../transfer/services/webrtc_service.dart';
 import '../../transfer/services/signaling_service.dart';
 import 'chat_encryption_service.dart';
 
-/// Service that manages P2P file chat sessions.
-/// Uses WebRTC DataChannel for file transfer.
-/// Stores chat history in SharedPreferences — ZERO DATABASE.
+/// P2P WhatsApp-style chat — SharedPreferences + disk files only (zero database).
 class ChatService {
   static const String _chatRoomsKey = 'chat_rooms';
+  static const int _maxMessagesPerRoom = 500;
 
   final WebRTCService _webrtc = WebRTCService();
   final SignalingService _signaling = SignalingService();
@@ -25,7 +24,6 @@ class ChatService {
     _webrtc.setEncryptionService(_encryption);
   }
 
-  // ─── Callbacks ───────────────────────────────────────────
   ValueChanged<ChatMessage>? onMessageReceived;
   ValueChanged<String>? onStatusChange;
   ValueChanged<String>? onError;
@@ -35,40 +33,36 @@ class ChatService {
 
   String? _activeRoomCode;
   bool _isConnected = false;
+  String? _lastAnswerLink;
+  DateTime? _lastTypingSent;
 
   bool get isConnected => _isConnected;
   String? get activeRoomCode => _activeRoomCode;
+  String? get lastAnswerLink => _lastAnswerLink;
   SignalingService get signaling => _signaling;
 
-  // ─── Chat Room Persistence ───────────────────────────────
-  bool _cleanupRanThisSession = false;
+  void _setSessionKeyForRoom(String roomCode) {
+    _encryption.setSessionKey(
+      ChatEncryptionService.deriveSessionKeyFromRoom(roomCode),
+    );
+  }
 
-  /// Get all saved chat rooms
   Future<List<ChatRoom>> getChatRooms() async {
-    // Run 24-hour cleanup once per session (fire-and-forget but debounced)
-    if (!_cleanupRanThisSession) {
-      _cleanupRanThisSession = true;
-      // Schedule cleanup after current call completes to avoid concurrent writes
-      Future.microtask(() => cleanupExpiredChats());
-    }
-
     final prefs = await SharedPreferences.getInstance();
     final jsonStr = prefs.getString(_chatRoomsKey);
     if (jsonStr == null || jsonStr.isEmpty) return [];
 
     try {
-      final List<dynamic> list = jsonDecode(jsonStr);
-      final rooms = list
+      final list = jsonDecode(jsonStr) as List<dynamic>;
+      return list
           .map((e) => ChatRoom.fromJson(e as Map<String, dynamic>))
           .toList()
         ..sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
-      return rooms;
     } catch (e) {
       return [];
     }
   }
 
-  /// Save or update a chat room
   Future<void> saveChatRoom(ChatRoom room) async {
     final rooms = await getChatRooms();
     final index = rooms.indexWhere((r) => r.roomCode == room.roomCode);
@@ -80,7 +74,6 @@ class ChatService {
     await _saveAllRooms(rooms);
   }
 
-  /// Delete a chat room
   Future<void> deleteChatRoom(String roomCode) async {
     final rooms = await getChatRooms();
     rooms.removeWhere((r) => r.roomCode == roomCode);
@@ -93,131 +86,145 @@ class ChatService {
     await prefs.setString(_chatRoomsKey, jsonStr);
   }
 
-  // ─── Connection ──────────────────────────────────────────
-
-  /// Create a new chat room (host mode)
+  /// Host creates room — share link, then paste joiner's answer link back.
   Future<String?> createRoom(String deviceName) async {
     final roomCode = _signaling.generateRoomCode();
     _activeRoomCode = roomCode;
-    
-    // Generate new E2E session key for this room
-    final sessionKey = _encryption.generateSessionKey();
-    _encryption.setSessionKey(sessionKey);
-
+    _lastAnswerLink = null;
+    _setSessionKeyForRoom(roomCode);
     _setupWebRTCCallbacks();
 
     final offer = await _webrtc.createOffer();
-    if (offer != null) {
-      final signalData = _signaling.packageSignalData(
-        type: 'offer',
-        sdp: offer,
-      );
-      await _signaling.storeSignalData(roomCode, signalData);
+    if (offer == null) return null;
 
-      // Create room record
-      final room = ChatRoom(
-        roomCode: roomCode,
-        peerName: 'Waiting...',
-        createdAt: DateTime.now(),
-        lastActivity: DateTime.now(),
-        messages: [],
-        isActive: true,
-      );
-      await saveChatRoom(room);
+    final signalData = _signaling.packageSignalData(type: 'offer', sdp: offer);
+    await _signaling.storeSignalData(roomCode, signalData);
 
-      onStatusChange?.call('Room created: $roomCode');
-      return roomCode;
-    }
-    return null;
+    await saveChatRoom(ChatRoom(
+      roomCode: roomCode,
+      peerName: deviceName,
+      createdAt: DateTime.now(),
+      lastActivity: DateTime.now(),
+      messages: [],
+      isActive: true,
+    ));
+
+    onStatusChange?.call('Room created — share link with friend');
+    return roomCode;
   }
 
-  /// Join an existing chat room
+  /// Joiner pastes host link — returns answer link to send back to host.
   Future<bool> joinRoom(String roomCode, String deviceName) async {
     _activeRoomCode = roomCode;
+    _lastAnswerLink = null;
+    _setSessionKeyForRoom(roomCode);
     _setupWebRTCCallbacks();
 
     final signalData = await _signaling.getSignalData(roomCode);
-    if (signalData != null) {
-      final unpacked = _signaling.unpackageSignalData(signalData);
-      if (unpacked != null) {
-        // Read the host's session key (we should pass it in signaling in reality, 
-        // for now we add it to the unpack data if we modified signaling, or just 
-        // rely on DTLS if we didn't exchange the AES key. Let's exchange it via DTLS profile sync later,
-        // but for now let's set a derived key based on room code just so both sides have a key)
-        // Wait, roomCode is known to both! Let's use roomCode as salt for AES key derivation to ensure E2E
-        _encryption.setSessionKey(ChatEncryptionService.hashPhoneNumber('${roomCode}E2E_SECRET_SALT_123')); // simplified E2E key setup
-        
-        final answer = await _webrtc.createAnswer(unpacked['sdp']);
-        if (answer != null) {
-          final answerData = _signaling.packageSignalData(
-            type: 'answer',
-            sdp: answer,
-          );
-          await _signaling.storeSignalData('${roomCode}_answer', answerData);
-
-          // Create/update room
-          final room = ChatRoom(
-            roomCode: roomCode,
-            peerName: 'Peer',
-            createdAt: DateTime.now(),
-            lastActivity: DateTime.now(),
-            messages: [],
-            isActive: true,
-          );
-          await saveChatRoom(room);
-
-          onStatusChange?.call('Joined room: $roomCode');
-          return true;
-        }
-      }
+    if (signalData == null) {
+      onError?.call('Connection data missing — paste full host link');
+      return false;
     }
 
-    onError?.call('Room not found: $roomCode');
-    return false;
+    final unpacked = _signaling.unpackageSignalData(signalData);
+    if (unpacked == null || unpacked['type'] != 'offer') {
+      onError?.call('Invalid host connection data');
+      return false;
+    }
+
+    final answer = await _webrtc.createAnswer(unpacked['sdp']);
+    if (answer == null) return false;
+
+    final answerData = _signaling.packageSignalData(type: 'answer', sdp: answer);
+    _lastAnswerLink = _signaling.generateQrContent(
+      roomCode: roomCode,
+      signalData: answerData,
+    );
+
+    await saveChatRoom(ChatRoom(
+      roomCode: roomCode,
+      peerName: deviceName,
+      createdAt: DateTime.now(),
+      lastActivity: DateTime.now(),
+      messages: [],
+      isActive: true,
+    ));
+
+    onStatusChange?.call('Connected — share answer link with host if needed');
+    return true;
+  }
+
+  /// Host pastes joiner's answer link (completes WebRTC handshake).
+  Future<bool> applyReceiverAnswer(String link) async {
+    final parsed = _signaling.parseQrContent(link.trim());
+    if (parsed == null || parsed['signalData']?.isEmpty != false) {
+      onError?.call('Invalid answer link');
+      return false;
+    }
+
+    final unpacked = _signaling.unpackageSignalData(parsed['signalData']!);
+    if (unpacked == null || unpacked['type'] != 'answer') {
+      onError?.call('Answer data invalid');
+      return false;
+    }
+
+    await _webrtc.setRemoteAnswer(unpacked['sdp']);
+    onStatusChange?.call('Peer connected!');
+    return true;
   }
 
   void _setupWebRTCCallbacks() {
     _webrtc.onConnectionStateChange = (connected) {
       _isConnected = connected;
       onConnectionChange?.call(connected);
-      onStatusChange?.call(connected ? 'Connected!' : 'Disconnected');
+      onStatusChange?.call(connected ? 'Online' : 'Offline');
     };
 
-    _webrtc.onError = (err) {
-      onError?.call(err);
-    };
-
-    _webrtc.onStatusChange = (status) {
-      onStatusChange?.call(status);
-    };
-
-    _webrtc.onTransferProgress = (progress) {
-      onTransferProgress?.call(progress);
-    };
+    _webrtc.onError = onError;
+    _webrtc.onStatusChange = onStatusChange;
+    _webrtc.onTransferProgress = onTransferProgress;
 
     _webrtc.onTransferComplete = (fileName) async {
-      // File received — create message
+      final receivedDir = await FileUtils.getReceivedDir();
+      File? sourceFile;
+      final direct = File('${receivedDir.path}/$fileName');
+      if (await direct.exists()) {
+        sourceFile = direct;
+      } else {
+        if (await receivedDir.exists()) {
+          for (final f in receivedDir.listSync().whereType<File>()) {
+            if (f.path.split(Platform.pathSeparator).last == fileName) {
+              sourceFile = f;
+              break;
+            }
+          }
+        }
+      }
+
       final chatDir = await _getChatFilesDir();
-      final filePath = '${chatDir.path}/$fileName';
+      String finalPath = '${chatDir.path}/$fileName';
+      int fileSize = 0;
 
-      final file = File(filePath);
-      final fileSize = await file.exists() ? await file.length() : 0;
+      if (sourceFile != null && await sourceFile.exists()) {
+        finalPath = await FileUtils.uniqueFilePath(chatDir.path, fileName);
+        await sourceFile.copy(finalPath);
+        fileSize = await File(finalPath).length();
+      }
 
+      final msgType = _messageTypeForFile(fileName);
       final message = ChatMessage(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: MessageType.file,
+        type: msgType,
         fileName: fileName,
         fileExtension: FileUtils.getExtension(fileName),
         fileSize: fileSize,
-        filePath: filePath,
+        filePath: finalPath,
         direction: MessageDirection.received,
         status: MessageStatus.delivered,
         timestamp: DateTime.now(),
       );
 
       onMessageReceived?.call(message);
-
-      // Save to room
       if (_activeRoomCode != null) {
         await _addMessageToRoom(_activeRoomCode!, message);
       }
@@ -239,32 +246,70 @@ class ChatService {
           _addMessageToRoom(_activeRoomCode!, message);
         }
       } else if (text.startsWith('READ:')) {
-        // Handle read receipts
-        // final msgId = text.substring(5);
-        // update message status to read in DB
+        final msgId = text.substring(5);
+        _markMessageRead(msgId);
       } else if (text.startsWith('TYPING:')) {
-        final isTyping = text.substring(7) == 'true';
-        onTypingChange?.call(isTyping);
+        onTypingChange?.call(text.substring(7) == 'true');
       }
     };
   }
 
-  // ─── Send File ───────────────────────────────────────────
+  MessageType _messageTypeForFile(String name) {
+    if (FileUtils.isImage(name)) return MessageType.image;
+    if (FileUtils.isVideo(name)) return MessageType.video;
+    final ext = FileUtils.getExtension(name);
+    if (['.mp3', '.wav', '.aac', '.m4a', '.ogg'].contains(ext)) {
+      return MessageType.voice;
+    }
+    return MessageType.file;
+  }
 
-  /// Send a file in the active chat session
+  Future<void> _markMessageRead(String messageId) async {
+    if (_activeRoomCode == null) return;
+    final rooms = await getChatRooms();
+    final idx = rooms.indexWhere((r) => r.roomCode == _activeRoomCode);
+    if (idx < 0) return;
+    final room = rooms[idx];
+    final updated = room.messages.map((m) {
+      if (m.id == messageId) return m.copyWith(status: MessageStatus.read);
+      return m;
+    }).toList();
+    rooms[idx] = room.copyWith(messages: updated);
+    await _saveAllRooms(rooms);
+  }
+
+  Future<void> markRoomAsRead(String roomCode) async {
+    final rooms = await getChatRooms();
+    final idx = rooms.indexWhere((r) => r.roomCode == roomCode);
+    if (idx < 0) return;
+    final room = rooms[idx];
+    final updated = room.messages.map((m) {
+      if (m.direction == MessageDirection.received &&
+          m.status != MessageStatus.read) {
+        if (_isConnected) {
+          _webrtc.sendTextMessage('READ:${m.id}');
+        }
+        return m.copyWith(status: MessageStatus.read);
+      }
+      return m;
+    }).toList();
+    rooms[idx] = room.copyWith(messages: updated);
+    await _saveAllRooms(rooms);
+  }
+
   Future<ChatMessage?> sendFile(File file) async {
     if (!_isConnected) {
-      onError?.call('Not connected to peer');
+      onError?.call('Not connected — share answer link if host');
       return null;
     }
 
     final fileName = FileUtils.getFileName(file.path);
     final fileSize = await file.length();
+    final msgType = _messageTypeForFile(fileName);
 
-    // Create message
     final message = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: MessageType.file,
+      type: msgType,
       fileName: fileName,
       fileExtension: FileUtils.getExtension(fileName),
       fileSize: fileSize,
@@ -274,31 +319,26 @@ class ChatService {
       timestamp: DateTime.now(),
     );
 
-    // Copy file to chat directory
     final chatDir = await _getChatFilesDir();
-    final chatFile = await file.copy('${chatDir.path}/$fileName');
+    final chatFile = await file.copy(
+      await FileUtils.uniqueFilePath(chatDir.path, fileName),
+    );
 
-    // Send via WebRTC
     final success = await _webrtc.sendFile(chatFile);
-
-    final updatedMessage = message.copyWith(
+    final updated = message.copyWith(
       status: success ? MessageStatus.sent : MessageStatus.failed,
       filePath: chatFile.path,
     );
 
-    // Save to room
     if (_activeRoomCode != null) {
-      await _addMessageToRoom(_activeRoomCode!, updatedMessage);
+      await _addMessageToRoom(_activeRoomCode!, updated);
     }
-
-    return updatedMessage;
+    return updated;
   }
-
-  // ─── Send Text ───────────────────────────────────────────
 
   Future<ChatMessage?> sendTextMessage(String text) async {
     if (!_isConnected) {
-      onError?.call('Not connected to peer');
+      onError?.call('Not connected');
       return null;
     }
 
@@ -312,124 +352,67 @@ class ChatService {
     );
 
     final success = _webrtc.sendTextMessage('TEXT:$text');
-
-    final updatedMessage = message.copyWith(
+    final updated = message.copyWith(
       status: success ? MessageStatus.sent : MessageStatus.failed,
     );
 
     if (_activeRoomCode != null) {
-      await _addMessageToRoom(_activeRoomCode!, updatedMessage);
+      await _addMessageToRoom(_activeRoomCode!, updated);
     }
-
-    return updatedMessage;
+    return updated;
   }
 
   Future<void> sendTypingStatus(bool isTyping) async {
-    if (_isConnected) {
-      _webrtc.sendTextMessage('TYPING:$isTyping');
+    if (!_isConnected) return;
+    final now = DateTime.now();
+    if (_lastTypingSent != null &&
+        now.difference(_lastTypingSent!) < const Duration(milliseconds: 800)) {
+      return;
     }
+    _lastTypingSent = now;
+    _webrtc.sendTextMessage('TYPING:$isTyping');
   }
 
-  // ─── Helpers ─────────────────────────────────────────────
-
   Future<Directory> _getChatFilesDir() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      final dir = Directory('/storage/emulated/0/Documents/FileSharePro/Chat');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
     final dir = await getApplicationDocumentsDirectory();
     final chatDir = Directory('${dir.path}/chat_files');
-    if (!await chatDir.exists()) {
-      await chatDir.create(recursive: true);
-    }
+    if (!await chatDir.exists()) await chatDir.create(recursive: true);
     return chatDir;
   }
 
   Future<void> _addMessageToRoom(String roomCode, ChatMessage message) async {
     final rooms = await getChatRooms();
     final index = rooms.indexWhere((r) => r.roomCode == roomCode);
-    if (index >= 0) {
-      final room = rooms[index];
-      final updatedMessages = [...room.messages, message];
-      rooms[index] = room.copyWith(
-        messages: updatedMessages,
-        lastActivity: DateTime.now(),
-      );
-      await _saveAllRooms(rooms);
+    if (index < 0) return;
+
+    final room = rooms[index];
+    var messages = [...room.messages, message];
+    if (messages.length > _maxMessagesPerRoom) {
+      messages = messages.sublist(messages.length - _maxMessagesPerRoom);
     }
+
+    rooms[index] = room.copyWith(
+      messages: messages,
+      lastActivity: DateTime.now(),
+    );
+    await _saveAllRooms(rooms);
   }
 
-  /// Get messages for a specific room
   Future<List<ChatMessage>> getRoomMessages(String roomCode) async {
     final rooms = await getChatRooms();
-    final room = rooms.where((r) => r.roomCode == roomCode).firstOrNull;
-    return room?.messages ?? [];
+    return rooms.where((r) => r.roomCode == roomCode).firstOrNull?.messages ??
+        [];
   }
 
-  // ─── Cleanup ─────────────────────────────────────────────
-
-  /// Automatically delete chat messages and files older than 24 hours
-  Future<void> cleanupExpiredChats() async {
-    final now = DateTime.now();
-    final expirationThreshold = const Duration(hours: 24);
-    
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_chatRoomsKey);
-    if (jsonStr == null || jsonStr.isEmpty) return;
-
-    try {
-      final List<dynamic> list = jsonDecode(jsonStr);
-      final rooms = list.map((e) => ChatRoom.fromJson(e as Map<String, dynamic>)).toList();
-      bool roomsUpdated = false;
-      
-      for (int i = 0; i < rooms.length; i++) {
-        final room = rooms[i];
-        final validMessages = <ChatMessage>[];
-        bool roomModified = false;
-        
-        for (final msg in room.messages) {
-          if (now.difference(msg.timestamp) < expirationThreshold) {
-            validMessages.add(msg);
-          } else {
-            // Message expired! Delete associated file if it's a file
-            if (msg.type == MessageType.file && msg.filePath != null) {
-              final file = File(msg.filePath!);
-              if (await file.exists()) {
-                try {
-                  await file.delete();
-                } catch (_) {}
-              }
-            }
-            roomModified = true;
-            roomsUpdated = true;
-          }
-        }
-        
-        if (roomModified) {
-          rooms[i] = room.copyWith(messages: validMessages);
-        }
-      }
-      
-      if (roomsUpdated) {
-        // Remove empty rooms older than 24 hours
-        rooms.removeWhere((r) => r.messages.isEmpty && now.difference(r.lastActivity) > expirationThreshold);
-        await _saveAllRooms(rooms);
-      }
-      
-      // Orphan file cleanup
-      final chatDir = await _getChatFilesDir();
-      if (await chatDir.exists()) {
-        final files = chatDir.listSync();
-        for (final file in files) {
-          if (file is File) {
-            final stat = file.statSync();
-            if (now.difference(stat.modified) > expirationThreshold) {
-              try {
-                file.deleteSync();
-              } catch (_) {}
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Chat cleanup error: $e');
-    }
+  Future<void> reconnectRoom(String roomCode) async {
+    _activeRoomCode = roomCode;
+    _setSessionKeyForRoom(roomCode);
+    _setupWebRTCCallbacks();
   }
 
   Future<void> disconnect() async {

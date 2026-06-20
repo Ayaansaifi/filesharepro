@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
+import '../../../core/constants/app_constants.dart';
 
 class PrivacyScreen extends StatelessWidget {
   const PrivacyScreen({super.key});
@@ -96,7 +97,7 @@ class PrivacyScreen extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: () async {
                     // Open the github pages privacy policy
-                    final url = Uri.parse('https://ayaansaifi.github.io/fileshare-privacy-policy/');
+                    final url = Uri.parse(AppConstants.privacyPolicyUrl);
                     if (await canLaunchUrl(url)) {
                       await launchUrl(url);
                     }

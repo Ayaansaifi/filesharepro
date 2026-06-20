@@ -218,13 +218,15 @@ class StatusSaverService {
       }
 
       final savedDir = await FileUtils.getSavedStatusDir();
-      final fileName = statusFile.path.split(Platform.pathSeparator).last;
-      final destPath = '${savedDir.path}/$fileName';
+      final fileName = FileUtils.sanitizeFileName(
+        statusFile.path.split(Platform.pathSeparator).last,
+      );
+      final destPath = await FileUtils.uniqueFilePath(savedDir.path, fileName);
 
       // Check if already saved
       final destFile = File(destPath);
       if (await destFile.exists()) {
-        return true; // Already saved
+        return true;
       }
 
       await statusFile.copy(destPath);
@@ -285,23 +287,33 @@ class StatusSaverService {
     }
   }
 
-  /// Try legacy file access (for older Android)
+  /// Try legacy file access — must be readable, not just exist
   Future<bool> _tryLegacyAccess() async {
     final allPaths = [
       ...AppConstants.whatsappStatusPaths,
       ...AppConstants.whatsappBusinessPaths,
     ];
-    
+
     for (final path in allPaths) {
       final dir = Directory('/storage/emulated/0/$path');
       try {
         if (await dir.exists()) {
-          return true;
+          final files = dir.listSync().whereType<File>().take(1);
+          for (final f in files) {
+            if (await f.length() > 0) return true;
+          }
         }
-      } catch (e) {
-        // continue checking
-      }
+      } catch (_) {}
     }
     return false;
+  }
+
+  /// Save multiple statuses at once
+  Future<int> saveMultiple(List<File> files) async {
+    var saved = 0;
+    for (final f in files) {
+      if (await saveStatus(f)) saved++;
+    }
+    return saved;
   }
 }

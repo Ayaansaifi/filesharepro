@@ -8,7 +8,6 @@ import '../../../../core/widgets/gradient_button.dart';
 import '../../providers/chat_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Bottom sheet dialog for creating or joining a chat room
 class ConnectDialog extends ConsumerStatefulWidget {
   final bool isJoin;
 
@@ -20,21 +19,22 @@ class ConnectDialog extends ConsumerStatefulWidget {
 
 class _ConnectDialogState extends ConsumerState<ConnectDialog> {
   final _codeController = TextEditingController();
+  final _answerController = TextEditingController();
   bool _isLoading = false;
   String? _generatedCode;
+  String? _joinerAnswerLink;
 
   @override
   void dispose() {
     _codeController.dispose();
+    _answerController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -44,7 +44,6 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
             Container(
               width: 36,
               height: 4,
@@ -54,26 +53,12 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Icon
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                gradient: widget.isJoin
-                    ? AppColors.receiveGradient
-                    : AppColors.primaryGradient,
+                gradient: widget.isJoin ? AppColors.receiveGradient : AppColors.primaryGradient,
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: (widget.isJoin
-                            ? AppColors.primaryPurple
-                            : AppColors.primaryCyan)
-                        .withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
               ),
               child: Icon(
                 widget.isJoin ? Icons.login_rounded : Icons.add_rounded,
@@ -82,137 +67,115 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Title
             Text(
-              widget.isJoin ? 'Join Chat Room' : 'Create Chat Room',
+              widget.isJoin ? 'Join Chat' : 'New Chat',
               style: AppTypography.heading3,
             ),
             const SizedBox(height: 6),
             Text(
               widget.isJoin
-                  ? 'Enter the room code shared by your friend'
-                  : 'Share the code with your friend to start chatting',
+                  ? 'Host ka link paste karo — WhatsApp jaisa secure chat'
+                  : 'Link share karo, phir answer link paste karo',
               style: AppTypography.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-
             if (widget.isJoin) ...[
-              // Join: Code input
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceLight.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppColors.primaryPurple.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: TextField(
-                  controller: _codeController,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium,
-                  maxLines: 3,
-                  minLines: 1,
-                  decoration: InputDecoration(
-                    hintText: 'Paste connection link here...',
-                    hintStyle: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textHint,
-                    ),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
+              _linkField(_codeController, 'Paste host connection link...'),
+              const SizedBox(height: 16),
               GradientButton(
-                label: 'Join Room',
+                label: 'Join Chat',
                 icon: Icons.login_rounded,
                 gradient: AppColors.receiveGradient,
                 isLoading: _isLoading,
                 onPressed: () => _joinRoom(context),
               ),
-            ] else ...[
-              // Create: Show generated code
-              if (_generatedCode != null) ...[
+              if (_joinerAnswerLink != null) ...[
+                const SizedBox(height: 20),
                 GlassCard(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Text('Your Room Code',
-                          style: AppTypography.caption),
+                      Text('Answer link — host ko bhejo', style: AppTypography.caption),
                       const SizedBox(height: 8),
                       Text(
-                        _generatedCode!,
-                        style: AppTypography.heading1.copyWith(
-                          letterSpacing: 8,
-                          color: AppColors.primaryCyan,
-                        ),
+                        _joinerAnswerLink!,
+                        style: AppTypography.caption.copyWith(fontSize: 10),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildMiniAction(
-                            icon: Icons.copy_rounded,
-                            label: 'Copy Link',
-                            onTap: () async {
-                              final signaling = ref.read(chatServiceProvider).signaling;
-                              final signalData = await signaling.getSignalData(_generatedCode!);
-                              if (signalData != null) {
-                                final link = signaling.generateQrContent(roomCode: _generatedCode!, signalData: signalData);
-                                Clipboard.setData(ClipboardData(text: link));
-                                HapticFeedback.lightImpact();
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: const Text('Connection link copied! Send it via SMS/WhatsApp.'),
-                                      backgroundColor: AppColors.surface,
-                                      behavior: SnackBarBehavior.floating,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12)),
-                                    ),
-                                  );
-                                }
-                              }
+                          TextButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _joinerAnswerLink!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Answer link copied')),
+                              );
                             },
+                            icon: const Icon(Icons.copy, size: 18),
+                            label: const Text('Copy'),
                           ),
-                          const SizedBox(width: 16),
-                          _buildMiniAction(
-                            icon: Icons.share_rounded,
-                            label: 'Share',
-                            onTap: () async {
-                              final signaling = ref.read(chatServiceProvider).signaling;
-                              final signalData = await signaling.getSignalData(_generatedCode!);
-                              if (signalData != null) {
-                                final link = signaling.generateQrContent(roomCode: _generatedCode!, signalData: signalData);
-                                Share.share('Join my secure FileShare Pro chat room!\n\nLink: $link');
-                              }
-                            },
+                          TextButton.icon(
+                            onPressed: () => Share.share('FileShare Pro chat answer:\n$_joinerAnswerLink'),
+                            icon: const Icon(Icons.share, size: 18),
+                            label: const Text('Share'),
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Waiting for peer to join...',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.primaryCyan,
+              ],
+            ] else ...[
+              if (_generatedCode != null) ...[
+                GlassCard(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Text('Room Code', style: AppTypography.caption),
+                      const SizedBox(height: 8),
+                      Text(
+                        _generatedCode!,
+                        style: AppTypography.heading1.copyWith(
+                          letterSpacing: 6,
+                          color: AppColors.whatsAppGreen,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _miniAction(Icons.copy_rounded, 'Copy Link', () => _copyHostLink(context)),
+                          const SizedBox(width: 16),
+                          _miniAction(Icons.share_rounded, 'Share', () => _shareHostLink(context)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ] else ...[
+                const SizedBox(height: 16),
+                Text('Step 2: Joiner ka answer link paste karo',
+                    style: AppTypography.caption.copyWith(color: AppColors.whatsAppGreen)),
+                const SizedBox(height: 8),
+                _linkField(_answerController, 'Paste answer link from joiner...'),
+                const SizedBox(height: 12),
                 GradientButton(
-                  label: 'Create Room',
+                  label: 'Connect',
+                  icon: Icons.link_rounded,
+                  gradient: AppColors.primaryGradient,
+                  onPressed: () => _applyAnswer(context),
+                ),
+              ] else
+                GradientButton(
+                  label: 'Create Chat',
                   icon: Icons.add_rounded,
                   gradient: AppColors.primaryGradient,
                   isLoading: _isLoading,
                   onPressed: () => _createRoom(context),
                 ),
-              ],
             ],
             const SizedBox(height: 16),
           ],
@@ -221,11 +184,25 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
     );
   }
 
-  Widget _buildMiniAction({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _linkField(TextEditingController c, String hint) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: TextField(
+        controller: c,
+        maxLines: 3,
+        minLines: 1,
+        style: AppTypography.bodyMedium,
+        decoration: InputDecoration(hintText: hint, border: InputBorder.none),
+      ),
+    );
+  }
+
+  Widget _miniAction(IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -234,10 +211,10 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.primaryCyan.withValues(alpha: 0.12),
+              color: AppColors.whatsAppGreen.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: AppColors.primaryCyan, size: 20),
+            child: Icon(icon, color: AppColors.whatsAppGreen, size: 20),
           ),
           const SizedBox(height: 4),
           Text(label, style: AppTypography.caption.copyWith(fontSize: 11)),
@@ -246,14 +223,36 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
     );
   }
 
+  Future<void> _copyHostLink(BuildContext context) async {
+    final signaling = ref.read(chatServiceProvider).signaling;
+    final signalData = await signaling.getSignalData(_generatedCode!);
+    if (signalData == null) return;
+    final link = signaling.generateQrContent(
+      roomCode: _generatedCode!,
+      signalData: signalData,
+    );
+    await Clipboard.setData(ClipboardData(text: link));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Host link copied — WhatsApp par bhejo')),
+      );
+    }
+  }
+
+  Future<void> _shareHostLink(BuildContext context) async {
+    final signaling = ref.read(chatServiceProvider).signaling;
+    final signalData = await signaling.getSignalData(_generatedCode!);
+    if (signalData == null) return;
+    final link = signaling.generateQrContent(
+      roomCode: _generatedCode!,
+      signalData: signalData,
+    );
+    await Share.share('FileShare Pro secure chat:\n$link');
+  }
+
   Future<void> _createRoom(BuildContext context) async {
     setState(() => _isLoading = true);
-    HapticFeedback.mediumImpact();
-
-    final code = await ref
-        .read(chatRoomsProvider.notifier)
-        .createRoom('My Device');
-
+    final code = await ref.read(chatRoomsProvider.notifier).createRoom('Me');
     setState(() {
       _isLoading = false;
       _generatedCode = code;
@@ -264,36 +263,34 @@ class _ConnectDialogState extends ConsumerState<ConnectDialog> {
     final link = _codeController.text.trim();
     final signaling = ref.read(chatServiceProvider).signaling;
     final parsed = signaling.parseQrContent(link);
-    
     if (parsed == null || parsed['roomCode'] == null || parsed['signalData'] == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Invalid connection link pasted'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+        const SnackBar(content: Text('Invalid link — poora link paste karo')),
       );
       return;
     }
-
-    final code = parsed['roomCode']!;
-    final signalData = parsed['signalData']!;
-    
-    // Store the remote offer in local SharedPreferences so ChatService can pick it up
-    await signaling.storeSignalData(code, signalData);
-
+    await signaling.storeSignalData(parsed['roomCode']!, parsed['signalData']!);
     setState(() => _isLoading = true);
-    HapticFeedback.mediumImpact();
+    final success = await ref.read(chatRoomsProvider.notifier).joinRoom(parsed['roomCode']!, 'Me');
+    final answerLink = ref.read(chatRoomsProvider.notifier).lastAnswerLink;
+    setState(() {
+      _isLoading = false;
+      _joinerAnswerLink = answerLink;
+    });
+    if (success && context.mounted && answerLink == null) {
+      Navigator.pop(context);
+    }
+  }
 
-    final success = await ref
-        .read(chatRoomsProvider.notifier)
-        .joinRoom(code, 'My Device');
-
-    setState(() => _isLoading = false);
-
-    if (success && context.mounted) {
-      Navigator.pop(context); // close dialog
+  Future<void> _applyAnswer(BuildContext context) async {
+    final link = _answerController.text.trim();
+    if (link.isEmpty) return;
+    final ok = await ref.read(chatRoomsProvider.notifier).applyReceiverAnswer(link);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Connected! Chat shuru karo' : 'Answer link invalid')),
+      );
+      if (ok) Navigator.pop(context);
     }
   }
 }

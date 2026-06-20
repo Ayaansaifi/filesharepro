@@ -1,7 +1,7 @@
 name: filesharepro
 description: "Hybrid Secure File Sharing + WhatsApp Status Saver"
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.10.0
@@ -50,6 +50,12 @@ dependencies:
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
   crypto: ^3.0.5
+
+  # AI (Gemini)
+  google_generative_ai: ^0.4.6
+
+  # Image compression for stories
+  image: ^4.3.0
 
   # Utilities
   uuid: ^4.5.0

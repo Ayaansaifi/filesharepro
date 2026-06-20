@@ -49,6 +49,12 @@ class ChatEncryptionService {
     return _encrypter!.decrypt(encrypted, iv: iv);
   }
 
+  /// Deterministic E2E key both peers derive from room code (no DB key exchange).
+  static String deriveSessionKeyFromRoom(String roomCode) {
+    final digest = sha256.convert(utf8.encode('FileSharePro_E2E_v2_$roomCode'));
+    return base64Encode(digest.bytes);
+  }
+
   /// Hash a phone number for privacy-preserving contact matching
   static String hashPhoneNumber(String phone) {
     // Remove all non-numeric characters except +

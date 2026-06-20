@@ -3,20 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/transfer_manager.dart';
 import '../services/nearby_service.dart';
 
-/// Provider for the TransferManager singleton
 final transferManagerProvider = Provider<TransferManager>((ref) {
   final manager = TransferManager();
   ref.onDispose(() => manager.dispose());
   return manager;
 });
 
-/// Provider for the current transfer state  
-final transferStateProvider = StateNotifierProvider<TransferStateNotifier, TransferUiState>((ref) {
+final transferStateProvider =
+    StateNotifierProvider<TransferStateNotifier, TransferUiState>((ref) {
   final manager = ref.watch(transferManagerProvider);
   return TransferStateNotifier(manager);
 });
 
-/// Transfer state notifier for UI reactivity
 class TransferStateNotifier extends StateNotifier<TransferUiState> {
   final TransferManager _manager;
 
@@ -32,10 +30,13 @@ class TransferStateNotifier extends StateNotifier<TransferUiState> {
       statusMessage: _manager.statusMessage,
       roomCode: _manager.roomCode,
       errorMessage: _manager.errorMessage,
+      connectionLink: _manager.connectionLink,
+      answerLink: _manager.answerLink,
       currentFileName: _manager.currentFileName,
       filesSent: _manager.filesSent,
       totalFiles: _manager.totalFiles,
       encryptionEnabled: _manager.encryptionEnabled,
+      discoveredDevices: _manager.discoveredDevices,
     );
   }
 
@@ -49,16 +50,39 @@ class TransferStateNotifier extends StateNotifier<TransferUiState> {
     _syncState();
   }
 
+  void setReceiverDecryptPin(String? pin) {
+    _manager.setReceiverDecryptPin(pin);
+  }
+
   Future<void> startSending(List<File> files) async {
     await _manager.startSending(files);
+    _syncState();
+  }
+
+  Future<void> startNearbyDiscovery() async {
+    await _manager.startNearbyDiscovery();
+    _syncState();
   }
 
   Future<void> startNearbyReceive(String address) async {
     await _manager.startNearbyReceive(address);
+    _syncState();
+  }
+
+  Future<void> startWebRTCReceiveFromLink(String link) async {
+    await _manager.startWebRTCReceiveFromLink(link);
+    _syncState();
   }
 
   Future<void> startWebRTCReceive(String roomCode) async {
     await _manager.startWebRTCReceive(roomCode);
+    _syncState();
+  }
+
+  Future<bool> applyReceiverAnswer(String link) async {
+    final ok = await _manager.applyReceiverAnswer(link);
+    _syncState();
+    return ok;
   }
 
   Future<void> cancel() async {
@@ -73,7 +97,6 @@ class TransferStateNotifier extends StateNotifier<TransferUiState> {
   }
 }
 
-/// Immutable UI state for transfers
 class TransferUiState {
   final TransferMode mode;
   final TransferState transferState;
@@ -81,10 +104,13 @@ class TransferUiState {
   final String statusMessage;
   final String? roomCode;
   final String? errorMessage;
+  final String? connectionLink;
+  final String? answerLink;
   final String? currentFileName;
   final int filesSent;
   final int totalFiles;
   final bool encryptionEnabled;
+  final List<NearbyDevice> discoveredDevices;
 
   const TransferUiState({
     required this.mode,
@@ -93,27 +119,31 @@ class TransferUiState {
     required this.statusMessage,
     this.roomCode,
     this.errorMessage,
+    this.connectionLink,
+    this.answerLink,
     this.currentFileName,
     this.filesSent = 0,
     this.totalFiles = 0,
     this.encryptionEnabled = false,
+    this.discoveredDevices = const [],
   });
 
   factory TransferUiState.initial() => const TransferUiState(
-    mode: TransferMode.nearby,
-    transferState: TransferState.idle,
-    progress: 0,
-    statusMessage: 'Ready to transfer',
-  );
+        mode: TransferMode.nearby,
+        transferState: TransferState.idle,
+        progress: 0,
+        statusMessage: 'Ready to transfer',
+      );
 
   bool get isIdle => transferState == TransferState.idle;
   bool get isTransferring => transferState == TransferState.transferring;
   bool get isCompleted => transferState == TransferState.completed;
   bool get hasError => transferState == TransferState.error;
+  bool get isWaiting => transferState == TransferState.waiting;
 }
 
-/// Provider for discovered nearby devices
-final nearbyDevicesProvider = StateNotifierProvider<NearbyDevicesNotifier, List<NearbyDevice>>((ref) {
+final nearbyDevicesProvider =
+    StateNotifierProvider<NearbyDevicesNotifier, List<NearbyDevice>>((ref) {
   return NearbyDevicesNotifier();
 });
 
@@ -121,7 +151,6 @@ class NearbyDevicesNotifier extends StateNotifier<List<NearbyDevice>> {
   NearbyDevicesNotifier() : super([]);
 
   void addDevice(NearbyDevice device) {
-    // Avoid duplicates by address
     if (!state.any((d) => d.address == device.address)) {
       state = [...state, device];
     }

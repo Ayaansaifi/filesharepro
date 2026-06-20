@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/app_animated_builder.dart';
+import '../../../features/stories/presentation/story_ring_widget.dart';
 
 import '../models/chat_message.dart';
 import '../providers/chat_provider.dart';
@@ -49,10 +50,21 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
         child: SafeArea(
           child: Column(
             children: [
-              // ─── Header ─────────────────────────────
+              // ─── Header ───────────────────────────────
               _buildHeader(context),
 
-              // ─── Chat List ──────────────────────────
+              // ─── Ephemeral Stories Row ────────────────
+              Container(
+                color: AppColors.surface,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: const StoriesRow(),
+              ),
+              Container(
+                height: 1,
+                color: AppColors.glassBorder,
+              ),
+
+              // ─── Chat List ───────────────────────────
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 90),
@@ -77,8 +89,18 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           Container(
@@ -86,31 +108,90 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
             height: 44,
             decoration: BoxDecoration(
               gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryCyan.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: const Icon(Icons.chat_bubble_rounded,
                 color: Colors.white, size: 22),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('File Chat', style: AppTypography.heading3),
                 Text(
-                  'Send files like WhatsApp',
+                  'Encrypted P2P • End-to-End',
                   style: AppTypography.caption
                       .copyWith(color: AppColors.primaryCyan),
                 ),
               ],
             ),
           ),
-          GlassCard(
-            padding: const EdgeInsets.all(10),
-            borderRadius: 14,
-            onTap: () => _showConnectDialog(context, isJoin: true),
-            child: const Icon(Icons.qr_code_scanner_rounded,
-                color: AppColors.primaryCyan, size: 20),
+          // Search icon
+          IconButton(
+            icon: const Icon(Icons.search_rounded,
+                color: AppColors.textSecondary, size: 22),
+            onPressed: () {},
+          ),
+          // More menu
+          Theme(
+            data: Theme.of(context)
+                .copyWith(cardColor: AppColors.surfaceLight),
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: AppColors.textSecondary, size: 22),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              onSelected: (val) {
+                if (val == 'new_room') {
+                  _showConnectDialog(context, isJoin: false);
+                } else if (val == 'join') {
+                  _showConnectDialog(context, isJoin: true);
+                } else if (val == 'contacts') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ContactsScreen()),
+                  );
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'new_room',
+                  child: Row(children: [
+                    Icon(Icons.add_rounded,
+                        color: AppColors.primaryCyan, size: 18),
+                    SizedBox(width: 10),
+                    Text('New Room'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'join',
+                  child: Row(children: [
+                    Icon(Icons.link_rounded,
+                        color: AppColors.primaryCyan, size: 18),
+                    SizedBox(width: 10),
+                    Text('Join with Code'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'contacts',
+                  child: Row(children: [
+                    Icon(Icons.contacts_rounded,
+                        color: AppColors.primaryCyan, size: 18),
+                    SizedBox(width: 10),
+                    Text('Contacts'),
+                  ]),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -224,114 +305,168 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
         onDismissed: (_) {
           ref.read(chatRoomsProvider.notifier).deleteRoom(room.roomCode);
         },
-        child: GlassCard(
-          padding: const EdgeInsets.all(14),
-          borderRadius: 16,
-          onTap: () {
-            HapticFeedback.lightImpact();
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatRoomScreen(roomCode: room.roomCode),
-              ),
-            );
-          },
-          child: Row(
-            children: [
-              // Avatar
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: index.isEven
-                      ? AppColors.primaryGradient
-                      : AppColors.receiveGradient,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Text(
-                    room.peerName.isNotEmpty
-                        ? room.peerName[0].toUpperCase()
-                        : '?',
-                    style: AppTypography.heading3.copyWith(
-                      color: Colors.white,
-                      fontSize: 22,
-                    ),
+        child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ChatRoomScreen(roomCode: room.roomCode),
                   ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(0),
                 ),
-              ),
-              const SizedBox(width: 14),
-
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Row(
+                    // WhatsApp-style circular avatar
+                    Stack(
                       children: [
-                        Expanded(
-                          child: Text(
-                            room.peerName,
-                            style: AppTypography.labelLarge,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            gradient: index.isEven
+                                ? AppColors.primaryGradient
+                                : AppColors.receiveGradient,
+                            shape: BoxShape.circle,
                           ),
-                        ),
-                        Text(
-                          _formatTime(room.lastActivity),
-                          style: AppTypography.caption.copyWith(fontSize: 11),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (room.isActive)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            margin: const EdgeInsets.only(right: 6),
-                            decoration: const BoxDecoration(
-                              color: AppColors.success,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            room.lastMessagePreview,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (room.unreadCount > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              gradient: AppColors.primaryGradient,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                          child: Center(
                             child: Text(
-                              '${room.unreadCount}',
+                              room.peerName.isNotEmpty
+                                  ? room.peerName[0].toUpperCase()
+                                  : '?',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (room.isActive)
+                          Positioned(
+                            right: 1,
+                            bottom: 1,
+                            child: Container(
+                              width: 13,
+                              height: 13,
+                              decoration: BoxDecoration(
+                                color: AppColors.success,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: AppColors.surface,
+                                    width: 2),
                               ),
                             ),
                           ),
                       ],
                     ),
+                    const SizedBox(width: 14),
+                    // Info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  room.peerName,
+                                  style: AppTypography.labelLarge
+                                      .copyWith(fontSize: 16),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                _formatTime(room.lastActivity),
+                                style: AppTypography.caption.copyWith(
+                                  fontSize: 11,
+                                  color: room.unreadCount > 0
+                                      ? AppColors.primaryCyan
+                                      : AppColors.textHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              // Checkmarks for sent/read status
+                              if (room.lastMessage?.direction ==
+                                  MessageDirection.sent) ...
+                                [
+                                  Icon(
+                                    room.lastMessage?.status ==
+                                            MessageStatus.read
+                                        ? Icons.done_all_rounded
+                                        : Icons.done_rounded,
+                                    size: 14,
+                                    color: room.lastMessage?.status ==
+                                            MessageStatus.read
+                                        ? AppColors.primaryCyan
+                                        : AppColors.textHint,
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                              Expanded(
+                                child: Text(
+                                  room.lastMessagePreview,
+                                  style: AppTypography.bodySmall
+                                      .copyWith(
+                                    color: room.unreadCount > 0
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
+                                    fontSize: 13,
+                                    fontWeight: room.unreadCount > 0
+                                        ? FontWeight.w500
+                                        : FontWeight.normal,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (room.unreadCount > 0)
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primaryCyan,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      room.unreadCount > 9
+                                          ? '9+'
+                                          : '${room.unreadCount}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
-        ),
       ),
     );
   }

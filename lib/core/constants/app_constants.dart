@@ -1,9 +1,26 @@
 class AppConstants {
   AppConstants._();
 
+  // ─── Gemini AI ──────────────────────────────────────────
+  /// Replace with your real Gemini API key from https://aistudio.google.com/
+  /// Or set via Settings screen for user-provided keys.
+  static const String geminiApiKey = String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: '',
+  );
+  static const String geminiModel = 'gemini-1.5-flash';
+  static const int aiRollingContextMax = 5; // max chat history items kept in RAM
+
+  // ─── Stories (Ephemeral Cache) ───────────────────────────
+  static const int storyExpiryHours = 24;
+  static const int storyMaxCount = 30; // max stories per device before FIFO deletion
+  static const int storyCleanupIntervalMin = 30; // periodic cleanup every 30 min
+  static const String storyCacheDir = 'filesharepro_stories';
+  static const String storyMetaKey = 'ephemeral_stories_meta';
+
   // ─── App Info ────────────────────────────────────────────
   static const String appName = 'FileShare Pro';
-  static const String appVersion = '1.1.0';
+  static const String appVersion = '1.2.0';
   static const String appPackage = 'com.filesharepro.filesharepro';
 
   // ─── WebRTC STUN/TURN (long-distance P2P) ─────────────────

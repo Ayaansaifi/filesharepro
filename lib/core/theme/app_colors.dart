@@ -1,72 +1,86 @@
 import 'package:flutter/material.dart';
 
+/// Refreshed palette — WhatsApp-inspired dark + vibrant accents.
 class AppColors {
   AppColors._();
 
-  // ─── Base Dark Theme ─────────────────────────────────────
-  static const Color background = Color(0xFF0A0E21);
-  static const Color surface = Color(0xFF1A1F38);
-  static const Color surfaceLight = Color(0xFF242A45);
-  static const Color card = Color(0xFF1E2340);
+  static const Color background = Color(0xFF0B141A);
+  static const Color surface = Color(0xFF111B21);
+  static const Color surfaceLight = Color(0xFF1F2C34);
+  static const Color card = Color(0xFF182229);
 
-  // ─── Primary Gradient ────────────────────────────────────
-  static const Color primaryCyan = Color(0xFF00D4FF);
-  static const Color primaryPurple = Color(0xFF7B2FFF);
-  static const Color primaryBlue = Color(0xFF4A6CF7);
+  static const Color primaryCyan = Color(0xFF00A884);
+  static const Color primaryPurple = Color(0xFF6C5CE7);
+  static const Color primaryBlue = Color(0xFF53BDEB);
 
-  // ─── Secondary Accent ────────────────────────────────────
+  static const Color whatsAppGreen = Color(0xFF00A884);
+  static const Color whatsAppSentBubble = Color(0xFF005C4B);
+  static const Color whatsAppReceivedBubble = Color(0xFF1F2C34);
+  static const Color whatsAppChatBg = Color(0xFF0B141A);
+
   static const Color accentPink = Color(0xFFFF6B9D);
-  static const Color accentOrange = Color(0xFFFF8A50);
+  static const Color accentOrange = Color(0xFFFF9F43);
+  static const Color accentYellow = Color(0xFFFFD93D);
 
-  // ─── Semantic Colors ─────────────────────────────────────
   static const Color success = Color(0xFF00E676);
   static const Color error = Color(0xFFFF5252);
   static const Color warning = Color(0xFFFFAB40);
   static const Color info = Color(0xFF448AFF);
 
-  // ─── Text Colors ─────────────────────────────────────────
-  static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFF8B95A5);
-  static const Color textHint = Color(0xFF5A6478);
+  // Vault advanced gradient
+  static const LinearGradient vaultAdvancedGradient = LinearGradient(
+    colors: [Color(0xFFFF6B9D), Color(0xFFFF9F43), Color(0xFFFFD93D)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
-  // ─── Glass Effect ────────────────────────────────────────
-  static Color glassWhite = Colors.white.withValues(alpha: 0.05);
-  static Color glassBorder = Colors.white.withValues(alpha: 0.1);
-  static Color glassHighlight = Colors.white.withValues(alpha: 0.15);
+  // Reels gradient
+  static const LinearGradient reelsGradient = LinearGradient(
+    colors: [Color(0xFFE040FB), Color(0xFFFF6B6B)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
-  // ─── Gradients ───────────────────────────────────────────
+  static const Color textPrimary = Color(0xFFE9EDEF);
+  static const Color textSecondary = Color(0xFF8696A0);
+  static const Color textHint = Color(0xFF667781);
+
+  static Color glassWhite = Colors.white.withValues(alpha: 0.06);
+  static Color glassBorder = Colors.white.withValues(alpha: 0.08);
+  static Color glassHighlight = Colors.white.withValues(alpha: 0.12);
+
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primaryCyan, primaryPurple],
+    colors: [Color(0xFF00A884), Color(0xFF25D366)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient sendGradient = LinearGradient(
-    colors: [Color(0xFF00D4FF), Color(0xFF4A6CF7)],
+    colors: [Color(0xFF00A884), Color(0xFF128C7E)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient receiveGradient = LinearGradient(
-    colors: [Color(0xFF7B2FFF), Color(0xFFFF6B9D)],
+    colors: [Color(0xFF6C5CE7), Color(0xFF00D4FF)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient successGradient = LinearGradient(
-    colors: [Color(0xFF00E676), Color(0xFF00BFA5)],
+    colors: [Color(0xFF00E676), Color(0xFF00A884)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient vaultGradient = LinearGradient(
-    colors: [Color(0xFFFF6B9D), Color(0xFFFF8A50)],
+    colors: [Color(0xFFFF6B9D), Color(0xFFFF9F43)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient backgroundGradient = LinearGradient(
-    colors: [background, Color(0xFF0F1630)],
+    colors: [Color(0xFF0B141A), Color(0xFF111B21)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );

@@ -101,7 +101,13 @@
     <h3>4.3 STUN/TURN Servers</h3>
     <p>For long-distance file transfers, the app uses publicly available STUN servers (Google, Cloudflare) and TURN relay servers to establish peer-to-peer WebRTC connections. These servers facilitate the connection only — your files are transferred directly between devices and are not stored on these relay servers.</p>
 
-    <h2>5. User-Generated Content (UGC)</h2>
+    <h3>4.4 Google Gemini AI</h3>
+    <p>We use the Google Generative AI SDK (Gemini) to provide smart chat reply suggestions and AI-generated file insights. When you use the AI chat features, the last received message or file metadata (such as name and size) is sent to Google's API for processing. We do not store these AI prompts or responses on our servers. For more details, please review <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</p>
+
+    <h2>5. Ephemeral Stories</h2>
+    <p>The app allows you to create and share 24-hour "Stories" using your camera and media storage. Story media files are saved securely in your device's temporary cache directory and are <strong>automatically deleted</strong> after 24 hours or when the app clears its cache. We do not upload your stories to any cloud server.</p>
+
+    <h2>6. User-Generated Content (UGC)</h2>
     <p>The Entertainment section displays memes and videos sourced from public Reddit feeds. We implement the following safety measures:</p>
     <ul>
         <li><strong>NSFW Filtering:</strong> All content is automatically filtered using keyword-based and subreddit-based NSFW detection. Content flagged as NSFW or containing adult keywords is blocked.</li>
