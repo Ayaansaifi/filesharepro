@@ -40,7 +40,7 @@
 <div class="hero">
     <h1>🔒 FileShare Pro</h1>
     <p class="subtitle">Privacy Policy & Terms of Service</p>
-    <p class="updated">Last updated: June 18, 2026</p>
+    <p class="updated">Last updated: June 24, 2026</p>
 </div>
 
 <div class="container">
@@ -103,6 +103,9 @@
 
     <h3>4.4 Google Gemini AI</h3>
     <p>We use the Google Generative AI SDK (Gemini) to provide smart chat reply suggestions and AI-generated file insights. When you use the AI chat features, the last received message or file metadata (such as name and size) is sent to Google's API for processing. We do not store these AI prompts or responses on our servers. For more details, please review <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</p>
+
+    <h3>4.5 MQTT Signaling Server</h3>
+    <p>To establish the WhatsApp-like global chat and peer-to-peer WebRTC connections, we use a public MQTT broker (test.mosquitto.org) as a signaling server. This broker is used purely for exchanging initial connection handshakes (Offers and Answers). No chat messages, files, or personal identifying data are stored on this broker. Once the connection is established, all data flows directly peer-to-peer.</p>
 
     <h2>5. Ephemeral Stories</h2>
     <p>The app allows you to create and share 24-hour "Stories" using your camera and media storage. Story media files are saved securely in your device's temporary cache directory and are <strong>automatically deleted</strong> after 24 hours or when the app clears its cache. We do not upload your stories to any cloud server.</p>
