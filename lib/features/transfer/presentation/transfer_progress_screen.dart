@@ -12,6 +12,7 @@ import '../../../core/widgets/progress_ring.dart';
 import '../../../core/widgets/app_animated_builder.dart';
 import '../providers/transfer_provider.dart';
 import '../services/transfer_manager.dart';
+import '../../../core/services/local_network_service.dart';
 
 class TransferProgressScreen extends ConsumerStatefulWidget {
   final bool isSender;
@@ -76,6 +77,12 @@ class _TransferProgressScreenState
               // ─── File Info ──────────────────────────
               if (state.currentFileName != null)
                 _buildFileInfo(state),
+
+              // ─── Sender: pick nearby receiver (SHAREit-style) ──
+              if (widget.isSender &&
+                  state.isWaiting &&
+                  state.mode == TransferMode.nearby)
+                _buildSenderDevicePicker(state, context, ref),
 
               if (widget.isSender &&
                   state.isWaiting &&
@@ -364,6 +371,144 @@ class _TransferProgressScreenState
           }
           await ref.read(transferStateProvider.notifier).applyReceiverAnswer(text);
         },
+      ),
+    );
+  }
+
+  Widget _buildSenderDevicePicker(
+      TransferUiState state, BuildContext context, WidgetRef ref) {
+    final devices = state.discoveredDevices;
+
+    return Flexible(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: GlassCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.radar, color: AppColors.primaryCyan, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Pick a receiver', style: AppTypography.labelLarge),
+                  const Spacer(),
+                  if (devices.isNotEmpty)
+                    Text('${devices.length} found',
+                        style: AppTypography.caption
+                            .copyWith(color: AppColors.success)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (devices.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.primaryCyan),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Scanning nearby devices…\n'
+                          'Make sure the receiver opened "Receive" on the same Wi-Fi.',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: devices.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final device = devices[index];
+                      return _buildDevicePickRow(device, ref);
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDevicePickRow(LocalDevice device, WidgetRef ref) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        ref
+            .read(transferStateProvider.notifier)
+            .connectAndSend(device);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                gradient: AppColors.sendGradient,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.smartphone_rounded,
+                  color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(device.name,
+                      style: AppTypography.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text(device.ip,
+                      style: AppTypography.caption.copyWith(fontSize: 10)),
+                ],
+              ),
+            ),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryCyan.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.send_rounded,
+                      color: AppColors.primaryCyan, size: 14),
+                  SizedBox(width: 4),
+                  Text('Send',
+                      style: TextStyle(
+                        color: AppColors.primaryCyan,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      )),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

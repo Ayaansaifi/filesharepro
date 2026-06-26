@@ -1,129 +1,86 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
-import '../models/story_model.dart';
-import '../services/story_cache_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../chat/models/user_profile.dart';
 import '../../chat/providers/chat_provider.dart';
+import '../models/story_model.dart';
+import '../services/story_service.dart';
 
-// ─── Service Provider ─────────────────────────────────────────────
-
-final storyCacheServiceProvider = Provider<StoryCacheService>((ref) {
+/// Story service provider
+final storyServiceProvider = Provider<StoryService>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
-  return StoryCacheService(prefs);
+  return StoryService(prefs);
 });
 
-// ─── Device Identity (for stories) ───────────────────────────────
-
-final storyDeviceIdProvider = Provider<String>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  const key = 'story_device_id';
-  var id = prefs.getString(key);
-  if (id == null) {
-    id = const Uuid().v4();
-    prefs.setString(key, id);
-  }
-  return id;
+/// Story groups state — all users with stories, sorted by recency.
+final storyGroupsProvider =
+    StateNotifierProvider<StoryGroupsNotifier, List<StoryGroup>>((ref) {
+  final service = ref.watch(storyServiceProvider);
+  return StoryGroupsNotifier(service);
 });
 
-final storyDisplayNameProvider = Provider<String>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  return prefs.getString('user_display_name') ?? 'Me';
-});
+class StoryGroupsNotifier extends StateNotifier<List<StoryGroup>> {
+  final StoryService _service;
 
-// ─── Stories State ────────────────────────────────────────────────
-
-class StoriesState {
-  final List<StoryGroup> groups;
-  final bool isLoading;
-  final bool isPosting;
-  final String? error;
-
-  const StoriesState({
-    this.groups = const [],
-    this.isLoading = false,
-    this.isPosting = false,
-    this.error,
-  });
-
-  StoriesState copyWith({
-    List<StoryGroup>? groups,
-    bool? isLoading,
-    bool? isPosting,
-    String? error,
-  }) =>
-      StoriesState(
-        groups: groups ?? this.groups,
-        isLoading: isLoading ?? this.isLoading,
-        isPosting: isPosting ?? this.isPosting,
-        error: error,
-      );
-
-  /// Own story group (isOwn = true)
-  StoryGroup? get myGroup => groups.where((g) => g.isOwn).firstOrNull;
-
-  /// Peer story groups (others)
-  List<StoryGroup> get peerGroups => groups.where((g) => !g.isOwn).toList();
-}
-
-// ─── Notifier ─────────────────────────────────────────────────────
-
-class StoriesNotifier extends StateNotifier<StoriesState> {
-  final StoryCacheService _service;
-  final String _deviceId;
-  final String _displayName;
-
-  StoriesNotifier(this._service, this._deviceId, this._displayName)
-      : super(const StoriesState()) {
+  StoryGroupsNotifier(this._service) : super([]) {
     loadStories();
   }
 
   Future<void> loadStories() async {
-    state = state.copyWith(isLoading: true);
-    final groups = await _service.getAllStoryGroups();
-    state = state.copyWith(groups: groups, isLoading: false);
+    state = await _service.loadStories();
   }
 
-  /// Pick and post a new story from a File (already picked by image_picker).
-  Future<bool> postStory(File mediaFile, {String? caption}) async {
-    state = state.copyWith(isPosting: true, error: null);
-    final item = await _service.postStory(
-      mediaFile: mediaFile,
-      deviceId: _deviceId,
-      displayName: _displayName,
-      caption: caption,
-    );
-    if (item != null) {
-      await loadStories();
-      state = state.copyWith(isPosting: false);
-      return true;
-    } else {
-      state = state.copyWith(isPosting: false, error: 'Failed to post story');
-      return false;
-    }
-  }
+  /// Add a new story for the current user.
+  Future<void> addMyStory(StoryItem story) async {
+    final profile = _getMyProfileFromPrefs(_service.prefs);
+    if (profile == null) return;
 
-  Future<void> markSeen(String itemId) async {
-    await _service.markSeen(itemId);
+    await _service.addStory(profile.peerId, profile.displayName, story);
     await loadStories();
   }
 
-  Future<void> deleteStory(String itemId) async {
-    await _service.deleteStory(itemId);
+  /// Delete a specific story.
+  Future<void> deleteStory(String userId, String storyId) async {
+    await _service.deleteStory(userId, storyId);
     await loadStories();
   }
 
-  Future<void> clearMyStories() async {
-    await _service.clearMyStories();
+  /// Mark stories viewed for a group up to given index.
+  Future<void> markViewed(String userId, int index) async {
+    await _service.setViewedUpTo(userId, index);
     await loadStories();
+  }
+
+  /// Get view progress for a story group (0.0 = none viewed, 1.0 = all viewed).
+  double viewProgress(StoryGroup group) {
+    final viewedUpTo = _service.getViewedUpTo(group.userId);
+    if (group.activeItems.isEmpty) return 1.0;
+    return (viewedUpTo + 1) / group.activeItems.length;
+  }
+
+  /// Whether a group has any unviewed stories.
+  bool hasUnviewed(StoryGroup group) {
+    final viewedUpTo = _service.getViewedUpTo(group.userId);
+    return viewedUpTo < group.activeItems.length - 1;
   }
 }
 
-// ─── Main Provider ────────────────────────────────────────────────
+// ─── Helper to read profile from SharedPreferences ───
+UserProfile? _getMyProfileFromPrefs(SharedPreferences prefs) {
+  final jsonStr = prefs.getString('my_profile');
+  if (jsonStr == null) return null;
+  try {
+    final map = json.decode(jsonStr) as Map<String, dynamic>;
+    return UserProfile.fromJson(map);
+  } catch (_) {
+    return null;
+  }
+}
 
-final storiesProvider =
-    StateNotifierProvider<StoriesNotifier, StoriesState>((ref) {
-  final service = ref.watch(storyCacheServiceProvider);
-  final deviceId = ref.watch(storyDeviceIdProvider);
-  final displayName = ref.watch(storyDisplayNameProvider);
-  return StoriesNotifier(service, deviceId, displayName);
+/// Convenience provider to get my user info for story creation.
+final myStoryProfileProvider = Provider<(String, String)>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final profile = _getMyProfileFromPrefs(prefs);
+  if (profile == null) return ('me', 'My Status');
+  return (profile.peerId, profile.displayName);
 });

@@ -8,10 +8,8 @@ import '../../../core/widgets/app_animated_builder.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../../chat/presentation/chat_list_screen.dart';
 import '../../vault/presentation/vault_screen.dart';
-import '../../../core/services/transfer_history_service.dart';
 import 'send_screen.dart';
 import 'receive_screen.dart';
-import 'transfer_history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,8 +25,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<double> _sendCardAnim;
   late Animation<double> _receiveCardAnim;
 
-  Map<String, int> _stats = {'sent': 0, 'received': 0, 'encrypted': 0};
-  final _history = TransferHistoryService();
+  Map<String, int> _stats = {'sent': 0, 'received': 0, 'total': 0};
 
   @override
   void initState() {
@@ -62,8 +59,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _loadStats() async {
-    final s = await _history.getStats();
-    if (mounted) setState(() => _stats = s);
+    if (mounted) setState(() => _stats = {'sent': 0, 'received': 0, 'total': 0});
   }
 
   @override
@@ -381,9 +377,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildQuickStats() {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(context, _createRoute(const TransferHistoryScreen()));
-      },
+      onTap: () {},
       child: GlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         borderRadius: 16,

@@ -1,120 +1,144 @@
-import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' show Color;
+import 'package:flutter/foundation.dart';
 
-/// Represents a single story media item (image or video).
-/// Media stored on disk; only lightweight metadata held in RAM.
+/// Story content types — text, image, or video.
+enum StoryType { text, image, video }
+
+/// A single story item (one slide in a user's story ring).
+///
+/// Stories are local-only and stored in SharedPreferences (metadata) +
+/// app documents directory (media files on mobile). They auto-expire
+/// after 24 hours.
+///
+/// Media storage:
+/// - Mobile (Android/iOS): local file via [filePath].
+/// - Web: base64-encoded image bytes via [mediaData] (Flutter web has no
+///   dart:io file system, so images are embedded directly).
 class StoryItem {
   final String id;
-  final StoryMediaType mediaType;
-  final String cachedFilePath; // path in getTemporaryDirectory()
+  final StoryType type;
   final DateTime createdAt;
-  final DateTime expiresAt;
-  final String? caption;
-  bool isSeen;
+
+  // Text story
+  final String? textContent;
+  final Color? bgColor;
+
+  // Image / Video story
+  final String? filePath; // local file path (mobile only)
+  final String? thumbnailPath;
+
+  /// Base64-encoded media bytes — used for image stories on Flutter Web
+  /// where there is no local file system. Null on mobile.
+  final String? mediaData;
 
   StoryItem({
     required this.id,
-    required this.mediaType,
-    required this.cachedFilePath,
+    required this.type,
     required this.createdAt,
-    required this.expiresAt,
-    this.caption,
-    this.isSeen = false,
+    this.textContent,
+    this.bgColor,
+    this.filePath,
+    this.thumbnailPath,
+    this.mediaData,
   });
 
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
+  /// Stories older than this are expired and should be deleted.
+  static const Duration expiryDuration = Duration(hours: 24);
+
+  bool get isExpired => DateTime.now().difference(createdAt) > expiryDuration;
+
+  bool get hasMedia => type == StoryType.image || type == StoryType.video;
+
+  /// Whether the media payload is available to render.
+  /// On web we use [mediaData] (base64); on mobile we stat the file.
+  /// existsSync() is a dart:io call that throws on web, so it is guarded.
+  bool get hasFile {
+    if (mediaData != null && mediaData!.isNotEmpty) return true;
+    if (filePath == null || filePath!.isEmpty) return false;
+    if (kIsWeb) return true;
+    return File(filePath!).existsSync();
+  }
+
+  StoryItem copyWith({
+    String? textContent,
+    Color? bgColor,
+    String? filePath,
+    String? thumbnailPath,
+    String? mediaData,
+  }) {
+    return StoryItem(
+      id: id,
+      type: type,
+      createdAt: createdAt,
+      textContent: textContent ?? this.textContent,
+      bgColor: bgColor ?? this.bgColor,
+      filePath: filePath ?? this.filePath,
+      thumbnailPath: thumbnailPath ?? this.thumbnailPath,
+      mediaData: mediaData ?? this.mediaData,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'mediaType': mediaType.index,
-        'cachedFilePath': cachedFilePath,
+        'type': type.index,
         'createdAt': createdAt.toIso8601String(),
-        'expiresAt': expiresAt.toIso8601String(),
-        'caption': caption,
-        'isSeen': isSeen,
+        'textContent': textContent,
+        'bgColor': bgColor?.toARGB32(),
+        'filePath': filePath,
+        'thumbnailPath': thumbnailPath,
+        'mediaData': mediaData,
       };
 
   factory StoryItem.fromJson(Map<String, dynamic> json) => StoryItem(
         id: json['id'] as String,
-        mediaType: StoryMediaType.values[json['mediaType'] as int],
-        cachedFilePath: json['cachedFilePath'] as String,
+        type: StoryType.values[json['type'] as int? ?? 0],
         createdAt: DateTime.parse(json['createdAt'] as String),
-        expiresAt: DateTime.parse(json['expiresAt'] as String),
-        caption: json['caption'] as String?,
-        isSeen: json['isSeen'] as bool? ?? false,
-      );
-
-  StoryItem copyWith({bool? isSeen, String? caption}) => StoryItem(
-        id: id,
-        mediaType: mediaType,
-        cachedFilePath: cachedFilePath,
-        createdAt: createdAt,
-        expiresAt: expiresAt,
-        caption: caption ?? this.caption,
-        isSeen: isSeen ?? this.isSeen,
+        textContent: json['textContent'] as String?,
+        bgColor: json['bgColor'] != null
+            ? Color(json['bgColor'] as int)
+            : null,
+        filePath: json['filePath'] as String?,
+        thumbnailPath: json['thumbnailPath'] as String?,
+        mediaData: json['mediaData'] as String?,
       );
 }
 
-enum StoryMediaType { image, video }
-
-/// A group of stories belonging to one device/user.
+/// A user's story ring — all of their story items grouped together.
 class StoryGroup {
-  final String deviceId;   // unique device identifier
+  final String userId; // profile.peerId or profile.uniqueId
   final String displayName;
   final List<StoryItem> items;
-  final DateTime lastUpdated;
-  final bool isOwn;        // true = my stories, false = peer's stories
 
-  const StoryGroup({
-    required this.deviceId,
+  StoryGroup({
+    required this.userId,
     required this.displayName,
     required this.items,
-    required this.lastUpdated,
-    this.isOwn = false,
   });
 
-  /// Count of unseen story items
-  int get unseenCount => items.where((i) => !i.isSeen && !i.isExpired).length;
+  /// Only non-expired items count.
+  List<StoryItem> get activeItems => items.where((s) => !s.isExpired).toList();
 
-  /// Live items (not expired)
-  List<StoryItem> get activeItems =>
-      items.where((i) => !i.isExpired).toList();
+  bool get hasActive => activeItems.isNotEmpty;
 
-  bool get hasActiveStories => activeItems.isNotEmpty;
+  /// Index of the first un-viewed item (for the ring progress indicator).
+  /// Returns 0 if none have been viewed.
+  int firstUnviewedIndex(int viewedUpTo) {
+    if (viewedUpTo >= activeItems.length) return 0;
+    return viewedUpTo.clamp(0, activeItems.length - 1);
+  }
 
   Map<String, dynamic> toJson() => {
-        'deviceId': deviceId,
+        'userId': userId,
         'displayName': displayName,
-        'items': items.map((i) => i.toJson()).toList(),
-        'lastUpdated': lastUpdated.toIso8601String(),
-        'isOwn': isOwn,
+        'items': items.map((s) => s.toJson()).toList(),
       };
 
   factory StoryGroup.fromJson(Map<String, dynamic> json) => StoryGroup(
-        deviceId: json['deviceId'] as String,
-        displayName: json['displayName'] as String,
+        userId: json['userId'] as String,
+        displayName: json['displayName'] as String? ?? 'Unknown',
         items: (json['items'] as List)
-            .map((i) => StoryItem.fromJson(i as Map<String, dynamic>))
+            .map((s) => StoryItem.fromJson(s as Map<String, dynamic>))
             .toList(),
-        lastUpdated: DateTime.parse(json['lastUpdated'] as String),
-        isOwn: json['isOwn'] as bool? ?? false,
       );
-
-  StoryGroup copyWith({List<StoryItem>? items, DateTime? lastUpdated}) =>
-      StoryGroup(
-        deviceId: deviceId,
-        displayName: displayName,
-        items: items ?? this.items,
-        lastUpdated: lastUpdated ?? this.lastUpdated,
-        isOwn: isOwn,
-      );
-
-  static String encodeList(List<StoryGroup> groups) =>
-      jsonEncode(groups.map((g) => g.toJson()).toList());
-
-  static List<StoryGroup> decodeList(String jsonStr) {
-    final list = jsonDecode(jsonStr) as List;
-    return list
-        .map((g) => StoryGroup.fromJson(g as Map<String, dynamic>))
-        .toList();
-  }
 }

@@ -262,6 +262,12 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
   }
 
   Widget _buildNearbySection(List devices) {
+    final transferState = ref.watch(transferStateProvider);
+    // If a sender has connected and is transferring, show progress UI inline.
+    if (transferState.isTransferring || transferState.isCompleted) {
+      return _buildReceivingStatus(transferState);
+    }
+
     return Column(
       children: [
         const SizedBox(height: 16),
@@ -279,14 +285,51 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
           ),
         ),
         const SizedBox(height: 24),
-        Text('Nearby Devices', style: AppTypography.heading3),
+        Text('Waiting for Sender', style: AppTypography.heading3),
         const SizedBox(height: 8),
         Text(
-          'Tap a sender — works like ShareIt on same Wi‑Fi',
+          'You are visible to nearby senders on the same Wi‑Fi.\n'
+          'Just wait — the sender will connect to you automatically, like ShareIt.',
           style: AppTypography.bodySmall,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
+
+        // Visible status card
+        GlassCard(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  gradient: AppColors.sendGradient,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.visibility_rounded,
+                    color: Colors.white),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('You\'re Visible!',
+                        style: AppTypography.labelLarge
+                            .copyWith(color: AppColors.success)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tell the sender to tap "Send" and pick your device',
+                      style: AppTypography.caption.copyWith(fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
 
         // ─── Radar Banner ────────────────────────────────
         GestureDetector(
@@ -334,7 +377,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
                         ),
                       ),
                       Text(
-                        'See senders on animated radar • Tap to connect',
+                        'See devices on animated radar',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 11,
@@ -350,70 +393,104 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
           ),
         ),
 
-        if (devices.isEmpty)
-          GlassCard(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                const Icon(Icons.search_rounded,
-                    color: AppColors.textHint, size: 40),
-                const SizedBox(height: 12),
-                Text('Searching for senders...',
-                    style: AppTypography.bodySmall),
-                const SizedBox(height: 16),
-                GradientButton(
-                  label: 'Refresh Search',
-                  icon: Icons.refresh_rounded,
-                  height: 44,
-                  onPressed: _startNearbyDiscovery,
-                ),
-              ],
-            ),
-          )
-        else
+        // Show nearby devices the receiver can see (informational)
+        if (devices.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('Devices on your network',
+                style: AppTypography.labelMedium
+                    .copyWith(color: AppColors.textHint)),
+          ),
           ...devices.map((device) => _buildDeviceTile(device)),
+        ],
+
+        GlassCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              const Icon(Icons.wifi_rounded,
+                  color: AppColors.primaryCyan, size: 32),
+              const SizedBox(height: 8),
+              Text(
+                'Tip: For best results, both phones should be on the same '
+                'Wi‑Fi network, or one phone\'s mobile hotspot.',
+                style: AppTypography.caption.copyWith(fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildDeviceTile(dynamic device) {
-    return GestureDetector(
-      onTap: () => _connectNearby(device.address as String),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.glassBorder),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: AppColors.sendGradient,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.smartphone_rounded, color: Colors.white),
+  Widget _buildReceivingStatus(TransferUiState transferState) {
+    return Column(
+      children: [
+        const SizedBox(height: 24),
+        _PulseAnimation(
+          controller: _pulseController,
+          child: Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              gradient: transferState.transferState.toString().contains('completed')
+                  ? AppColors.receiveGradient
+                  : AppColors.sendGradient,
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(device.name as String, style: AppTypography.labelLarge),
-                  Text('Tap to receive files',
-                      style: AppTypography.caption),
-                ],
-              ),
+            child: Icon(
+              transferState.transferState.toString().contains('completed')
+                  ? Icons.check_rounded
+                  : Icons.download_rounded,
+              color: Colors.white,
+              size: 44,
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.primaryCyan),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 24),
+        Text(
+          transferState.transferState.toString().contains('completed')
+              ? 'Transfer Complete!'
+              : 'Receiving Files...',
+          style: AppTypography.heading3,
+        ),
+        const SizedBox(height: 8),
+        if (transferState.currentFileName != null)
+          Text(
+            transferState.currentFileName!,
+            style: AppTypography.bodySmall,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (transferState.transferState.toString().contains('transferring')) ...[
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: transferState.progress,
+              minHeight: 8,
+              backgroundColor: AppColors.surfaceLight,
+              valueColor:
+                  const AlwaysStoppedAnimation(AppColors.primaryCyan),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${(transferState.progress * 100).toStringAsFixed(0)}%',
+            style: AppTypography.labelLarge
+                .copyWith(color: AppColors.primaryCyan),
+          ),
+        ],
+        if (transferState.filesSent > 0) ...[
+          const SizedBox(height: 12),
+          Text(
+            '${transferState.filesSent} file(s) received',
+            style: AppTypography.bodySmall,
+          ),
+        ],
+      ],
     );
   }
 
@@ -424,20 +501,44 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen>
     await ref.read(transferStateProvider.notifier).startNearbyDiscovery();
   }
 
-  Future<void> _connectNearby(String endpointId) async {
-    if (kIsWeb) {
-      _showWebOnlyMessage();
-      return;
-    }
-    HapticFeedback.mediumImpact();
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const TransferProgressScreen(isSender: false),
+  Widget _buildDeviceTile(dynamic device) {
+    // Receiver view: devices are informational only — the sender initiates.
+    final name = device.name as String? ?? 'Unknown device';
+    final ip = device.ip as String? ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              gradient: AppColors.sendGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.smartphone_rounded, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: AppTypography.labelLarge),
+                Text(ip, style: AppTypography.caption.copyWith(fontSize: 11)),
+              ],
+            ),
+          ),
+          const Icon(Icons.visibility_rounded,
+              color: AppColors.success, size: 20),
+        ],
       ),
     );
-    await ref.read(transferStateProvider.notifier).startNearbyReceive(endpointId);
   }
 
   Future<void> _connectWithLink() async {

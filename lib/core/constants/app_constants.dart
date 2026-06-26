@@ -6,7 +6,7 @@ class AppConstants {
   /// Or set via Settings screen for user-provided keys.
   static const String geminiApiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
-    defaultValue: '',
+    defaultValue: 'YOUR_API_KEY_HERE',
   );
   static const String geminiModel = 'gemini-1.5-flash';
   static const int aiRollingContextMax = 5; // max chat history items kept in RAM
@@ -20,7 +20,7 @@ class AppConstants {
 
   // ─── App Info ────────────────────────────────────────────
   static const String appName = 'FileShare Pro';
-  static const String appVersion = '1.2.0';
+  static const String appVersion = '1.3.0';
   static const String appPackage = 'com.filesharepro.filesharepro';
 
   // ─── WebRTC STUN/TURN (long-distance P2P) ─────────────────

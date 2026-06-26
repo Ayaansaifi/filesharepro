@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/utils/permission_utils.dart';
+import '../../../core/utils/phone_utils.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -11,7 +12,6 @@ import '../models/contact_model.dart';
 import '../providers/chat_provider.dart';
 import 'chat_room_screen.dart';
 import 'discovery_screen.dart';
-import 'widgets/connect_dialog.dart';
 
 final futureContactsProvider = FutureProvider<List<AppContact>>((ref) async {
   final service = ref.watch(contactsServiceProvider);
@@ -201,7 +201,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           HapticFeedback.mediumImpact();
-          _showCreateRoomDialog(context);
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoveryScreen()));
         },
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -307,17 +307,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         borderRadius: 16,
         onTap: () {
           HapticFeedback.lightImpact();
-          if (contact.roomCode != null) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatRoomScreen(roomCode: contact.roomCode!),
-              ),
-            );
-          } else {
-            // Create a room for this contact
-            _createRoomForContact(contact);
-          }
+          _connectToContact(contact);
         },
         child: Row(
           children: [
@@ -452,30 +442,39 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     );
   }
 
-  Future<void> _createRoomForContact(AppContact contact) async {
+  Future<void> _connectToContact(AppContact contact) async {
+    // Normalize the contact's phone number to digits-only so it matches the
+    // peer's signaling subscription topic exactly.
+    final peerId = PhoneUtils.tryPeerId(contact.phoneNumber);
+    if (peerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${contact.displayName} has no valid phone number'),
+        ),
+      );
+      return;
+    }
+
     final chatRooms = ref.read(chatRoomsProvider.notifier);
-    final code = await chatRooms.createRoom(contact.displayName);
-    if (code != null && mounted) {
-      // Save paired contact with room code
-      final pairedContact = contact.copyWith(roomCode: code);
-      await ref.read(contactsServiceProvider).savePairedContact(pairedContact);
-      
-      if (!mounted) return;
+    // Connect in global mode (WebRTC) by passing an empty IP. The peerId is the
+    // contact's normalized phone number — the topic they subscribe to.
+    final success = await chatRooms.connectTo('', peerId, contact.displayName);
+    if (success && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ChatRoomScreen(roomCode: code),
+          builder: (_) => ChatRoomScreen(roomCode: peerId),
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Connecting to ${contact.displayName}… They must be online in FileShare Pro.'),
         ),
       );
     }
   }
 
-  void _showCreateRoomDialog(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const ConnectDialog(isJoin: false),
-    );
-  }
+
 }

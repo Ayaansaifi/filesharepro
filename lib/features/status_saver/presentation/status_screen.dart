@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -457,7 +458,16 @@ class _StatusScreenState extends State<StatusScreen>
                   // Thumbnail - use actual video frame or image
                   isVideo
                       ? _VideoThumbnail(file: file)
-                      : Image.file(file, fit: BoxFit.cover,
+                      : kIsWeb 
+                          ? Image.network(file.path, fit: BoxFit.cover,
+                              cacheWidth: 200,
+                              errorBuilder: (_, e, st) => Container(
+                                color: AppColors.surfaceLight,
+                                child: const Icon(Icons.broken_image,
+                                    color: AppColors.textHint),
+                              ),
+                            )
+                          : Image.file(file, fit: BoxFit.cover,
                           cacheWidth: 200,
                           errorBuilder: (_, e, st) => Container(
                             color: AppColors.surfaceLight,
@@ -569,7 +579,15 @@ class _StatusScreenState extends State<StatusScreen>
               children: [
                 isVideo
                     ? _VideoThumbnail(file: file)
-                    : Image.file(file, fit: BoxFit.cover,
+                    : kIsWeb
+                        ? Image.network(file.path, fit: BoxFit.cover,
+                            cacheWidth: 200,
+                            errorBuilder: (_, e, st) => Container(
+                              color: AppColors.surfaceLight,
+                              child: const Icon(Icons.broken_image, color: AppColors.textHint),
+                            ),
+                          )
+                        : Image.file(file, fit: BoxFit.cover,
                         cacheWidth: 200,
                         errorBuilder: (_, e, st) => Container(
                           color: AppColors.surfaceLight,
@@ -628,7 +646,7 @@ class _StatusScreenState extends State<StatusScreen>
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(20),
-                child: Image.file(file, fit: BoxFit.contain),
+                child: kIsWeb ? Image.network(file.path, fit: BoxFit.contain) : Image.file(file, fit: BoxFit.contain),
               ),
               Positioned(
                 top: 8,
@@ -779,7 +797,7 @@ class _VideoPreviewScreenState extends State<_VideoPreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(widget.file)
+    _controller = kIsWeb ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path)) : VideoPlayerController.file(widget.file)
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);

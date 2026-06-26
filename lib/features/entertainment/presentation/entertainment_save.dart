@@ -1,2 +1,2 @@
-export 'entertainment_save_mobile.dart'
-    if (dart.library.html) 'entertainment_save_web.dart';
+// This file is deprecated and no longer used.
+// The entertainment feature has been removed.

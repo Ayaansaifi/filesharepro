@@ -5,13 +5,14 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/app_animated_builder.dart';
-import '../../../features/stories/presentation/story_ring_widget.dart';
+
 
 import '../models/chat_message.dart';
 import '../providers/chat_provider.dart';
 import 'chat_room_screen.dart';
 import 'contacts_screen.dart';
-import 'widgets/connect_dialog.dart';
+import 'discovery_screen.dart';
+import '../../stories/presentation/stories_row.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -31,6 +32,16 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
       duration: const Duration(milliseconds: 600),
       vsync: this,
     )..forward();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final profile = ref.read(myProfileProvider);
+      if (profile != null) {
+        // Connect to the signaling broker using our phone-number identity so
+        // that contacts can reach us globally. Falls back to uniqueId for
+        // legacy/local-only profiles.
+        ref.read(signalingServiceProvider).connect(profile.peerId);
+      }
+    });
   }
 
   @override
@@ -56,7 +67,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
               // ─── Ephemeral Stories Row ────────────────
               Container(
                 color: AppColors.surface,
-                padding: const EdgeInsets.symmetric(vertical: 10),
                 child: const StoriesRow(),
               ),
               Container(
@@ -151,9 +161,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                   borderRadius: BorderRadius.circular(16)),
               onSelected: (val) {
                 if (val == 'new_room') {
-                  _showConnectDialog(context, isJoin: false);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoveryScreen()));
                 } else if (val == 'join') {
-                  _showConnectDialog(context, isJoin: true);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoveryScreen()));
                 } else if (val == 'contacts') {
                   Navigator.push(
                     context,
@@ -178,7 +188,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                     Icon(Icons.link_rounded,
                         color: AppColors.primaryCyan, size: 18),
                     SizedBox(width: 10),
-                    Text('Join with Code'),
+                    Text('Scan Network'),
                   ]),
                 ),
                 const PopupMenuItem(
@@ -202,8 +212,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 100,
@@ -236,22 +247,23 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
               children: [
                 _buildActionChip(
                   icon: Icons.add_rounded,
-                  label: 'Create Room',
+                  label: 'Scan Network',
                   color: AppColors.primaryCyan,
-                  onTap: () => _showConnectDialog(context, isJoin: false),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DiscoveryScreen())),
                 ),
                 const SizedBox(width: 12),
                 _buildActionChip(
-                  icon: Icons.login_rounded,
-                  label: 'Join Room',
+                  icon: Icons.contacts_rounded,
+                  label: 'Contacts',
                   color: AppColors.primaryPurple,
-                  onTap: () => _showConnectDialog(context, isJoin: true),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactsScreen())),
                 ),
               ],
             ),
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -292,23 +304,115 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
       padding: const EdgeInsets.only(bottom: 8),
       child: Dismissible(
         key: Key(room.roomCode),
-        direction: DismissDirection.endToStart,
+        // Swipe right → Pin / Unpin
         background: Container(
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 20),
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 24),
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.2),
+            color: AppColors.primaryCyan.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.delete_rounded, color: AppColors.error),
+          child: Icon(
+            room.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+            color: AppColors.primaryCyan,
+          ),
         ),
-        onDismissed: (_) {
-          ref.read(chatRoomsProvider.notifier).deleteRoom(room.roomCode);
+        // Swipe left → Mute / Unmute
+        secondaryBackground: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 24),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(
+            room.isMuted ? Icons.notifications_rounded : Icons.notifications_off_rounded,
+            color: AppColors.warning,
+          ),
+        ),
+        confirmDismiss: (direction) async {
+          final notifier = ref.read(chatRoomsProvider.notifier);
+          if (direction == DismissDirection.startToEnd) {
+            // Pin toggle
+            await notifier.togglePin(room.roomCode, !room.isPinned);
+            _showSnackBar(room.isPinned ? 'Unpinned' : 'Pinned');
+            return false; // Don't actually dismiss
+          } else {
+            // Long swipe left → show options (mute, delete)
+            final action = await showModalBottomSheet<String>(
+              context: context,
+              backgroundColor: AppColors.surface,
+              shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+              builder: (ctx) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        room.isMuted ? Icons.notifications_rounded : Icons.notifications_off_rounded,
+                        color: AppColors.warning,
+                      ),
+                      title: Text(room.isMuted ? 'Unmute notifications' : 'Mute notifications'),
+                      onTap: () => Navigator.pop(ctx, 'mute'),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.delete_rounded, color: AppColors.error),
+                      title: const Text('Delete chat'),
+                      onTap: () => Navigator.pop(ctx, 'delete'),
+                    ),
+                    ListTile(
+                      leading: Icon(Icons.push_pin_rounded, color: AppColors.primaryCyan),
+                      title: Text(room.isPinned ? 'Unpin chat' : 'Pin chat'),
+                      onTap: () => Navigator.pop(ctx, 'pin'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+            if (action == 'mute') {
+              await notifier.toggleMute(room.roomCode, !room.isMuted);
+              _showSnackBar(room.isMuted ? 'Unmuted' : 'Muted');
+            } else if (action == 'pin') {
+              await notifier.togglePin(room.roomCode, !room.isPinned);
+              _showSnackBar(room.isPinned ? 'Unpinned' : 'Pinned');
+            } else if (action == 'delete') {
+              if (!mounted) return false;
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: AppColors.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  title: Text('Delete "${room.peerName}"?', style: const TextStyle(color: Colors.white)),
+                  content: const Text('All messages will be permanently deleted.',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel', style: TextStyle(color: AppColors.textHint)),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Delete',
+                          style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await notifier.deleteRoom(room.roomCode);
+                _showSnackBar('Chat deleted');
+              }
+            }
+            return false; // Don't dismiss — we handle it via provider
+          }
         },
         child: Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(16),
               onTap: () {
                 HapticFeedback.lightImpact();
                 Navigator.push(
@@ -323,7 +427,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                 padding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: room.isPinned
+                      ? AppColors.surface.withValues(alpha: 0.7)
+                      : AppColors.surface,
                   borderRadius: BorderRadius.circular(0),
                 ),
                 child: Row(
@@ -379,6 +485,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                         children: [
                           Row(
                             children: [
+                              if (room.isMuted)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 6),
+                                  child: Icon(Icons.notifications_off_rounded,
+                                      size: 14, color: AppColors.textHint),
+                                ),
                               Expanded(
                                 child: Text(
                                   room.peerName,
@@ -388,6 +500,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (room.isPinned)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 6),
+                                  child: Icon(Icons.push_pin_rounded,
+                                      size: 14, color: AppColors.textHint),
+                                ),
                               Text(
                                 _formatTime(room.lastActivity),
                                 style: AppTypography.caption.copyWith(
@@ -404,21 +522,24 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                             children: [
                               // Checkmarks for sent/read status
                               if (room.lastMessage?.direction ==
-                                  MessageDirection.sent) ...
-                                [
-                                  Icon(
-                                    room.lastMessage?.status ==
-                                            MessageStatus.read
-                                        ? Icons.done_all_rounded
-                                        : Icons.done_rounded,
-                                    size: 14,
-                                    color: room.lastMessage?.status ==
-                                            MessageStatus.read
-                                        ? AppColors.primaryCyan
-                                        : AppColors.textHint,
-                                  ),
-                                  const SizedBox(width: 4),
-                                ],
+                                  MessageDirection.sent &&
+                                  !room.lastMessage!.isDeleted) ...[
+                                Icon(
+                                  room.lastMessage?.status ==
+                                          MessageStatus.read
+                                      ? Icons.done_all_rounded
+                                      : (room.lastMessage?.status ==
+                                              MessageStatus.delivered
+                                          ? Icons.done_all_rounded
+                                          : Icons.done_rounded),
+                                  size: 14,
+                                  color: room.lastMessage?.status ==
+                                          MessageStatus.read
+                                      ? const Color(0xFF34B7F1)
+                                      : AppColors.textHint,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                               Expanded(
                                 child: Text(
                                   room.lastMessagePreview,
@@ -471,6 +592,18 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
     );
   }
 
+  void _showSnackBar(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.surface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   Widget _buildFab(BuildContext context) {
     return AppAnimatedBuilder(
       listenable: _fabController,
@@ -517,15 +650,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
     );
   }
 
-  void _showConnectDialog(BuildContext context, {required bool isJoin}) {
-    HapticFeedback.mediumImpact();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ConnectDialog(isJoin: isJoin),
-    );
-  }
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();

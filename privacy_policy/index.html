@@ -40,7 +40,7 @@
 <div class="hero">
     <h1>🔒 FileShare Pro</h1>
     <p class="subtitle">Privacy Policy & Terms of Service</p>
-    <p class="updated">Last updated: June 24, 2026</p>
+    <p class="updated">Last updated: June 26, 2026</p>
 </div>
 
 <div class="container">
@@ -58,6 +58,7 @@
     <ul>
         <li><strong>Display Name & Profile Photo:</strong> Stored locally on your device only. Not uploaded anywhere.</li>
         <li><strong>Vault PIN:</strong> Your PIN hash is stored locally on your device using SHA-256 + PBKDF2. We cannot recover your PIN.</li>
+        <li><strong>BP Checker Readings:</strong> Blood pressure readings entered in the BP Checker tool are stored locally on your device using SharedPreferences. We do not collect, transmit, or store this health data on any server.</li>
     </ul>
 
     <h3>2.2 Information Collected Automatically</h3>
@@ -73,6 +74,9 @@
         <li>We do NOT store your files on any cloud or server</li>
         <li>We do NOT track your browsing activity</li>
         <li>We do NOT collect or transmit your chat messages</li>
+        <li>We do NOT collect or transmit any health data (BP readings are stored locally only)</li>
+        <li><b>BP Checker:</b> Does not connect to the internet or any medical databases. The information is only processed locally for simulation purposes.</li>
+        <li><b>Meme Generator:</b> Image processing, text overlaying, and saving of memes happen entirely on your device. The app requests gallery access solely to save your creations to your device. Memes are not uploaded or analyzed.</li>
     </ul>
 
     <h2>3. Permissions & Their Usage</h2>
@@ -83,7 +87,7 @@
         <tr><td>Location</td><td>Discovering nearby devices via Wi-Fi Direct (required by Android API). Not tracked or stored.</td><td>Never shared</td></tr>
         <tr><td>Bluetooth</td><td>Nearby device discovery for file transfers</td><td>Never shared</td></tr>
         <tr><td>Camera</td><td>QR code scanning for device pairing</td><td>Never shared</td></tr>
-        <tr><td>Storage / Media</td><td>Selecting files to share, saving received files, vault encryption</td><td>Never shared</td></tr>
+        <tr><td>Storage / Media</td><td>Selecting files to share, saving received items, vault encryption, image processing in utility tools</td><td>Never shared</td></tr>
         <tr><td>Contacts</td><td>Displaying contact names locally for the chat feature. Contacts are read on-device only and are <strong>never uploaded</strong> to any server.</td><td>Never shared or uploaded</td></tr>
         <tr><td>Microphone</td><td>Recording voice notes for local P2P chat</td><td>Never shared</td></tr>
         <tr><td>Notifications</td><td>File transfer progress and incoming chat alerts</td><td>Never shared</td></tr>
@@ -95,34 +99,32 @@
     <h3>4.1 Google AdMob</h3>
     <p>We use Google AdMob to serve non-intrusive banner advertisements. AdMob may collect and use data as described in <a href="https://policies.google.com/technologies/ads" target="_blank">Google's Advertising Policies</a>. You can opt out of personalized ads through your device's Google Settings.</p>
 
-    <h3>4.2 Reddit Public API (Meme Feed)</h3>
-    <p>The Entertainment section fetches publicly available content from Reddit's public JSON API. We do not authenticate with Reddit on your behalf, and no Reddit account data is collected.</p>
-
-    <h3>4.3 STUN/TURN Servers</h3>
+    <h3>4.2 STUN/TURN Servers</h3>
     <p>For long-distance file transfers, the app uses publicly available STUN servers (Google, Cloudflare) and TURN relay servers to establish peer-to-peer WebRTC connections. These servers facilitate the connection only — your files are transferred directly between devices and are not stored on these relay servers.</p>
 
-    <h3>4.4 Google Gemini AI</h3>
+    <h3>4.3 Google Gemini AI</h3>
     <p>We use the Google Generative AI SDK (Gemini) to provide smart chat reply suggestions and AI-generated file insights. When you use the AI chat features, the last received message or file metadata (such as name and size) is sent to Google's API for processing. We do not store these AI prompts or responses on our servers. For more details, please review <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</p>
 
-    <h3>4.5 MQTT Signaling Server</h3>
+    <h3>4.4 MQTT Signaling Server</h3>
     <p>To establish the WhatsApp-like global chat and peer-to-peer WebRTC connections, we use a public MQTT broker (test.mosquitto.org) as a signaling server. This broker is used purely for exchanging initial connection handshakes (Offers and Answers). No chat messages, files, or personal identifying data are stored on this broker. Once the connection is established, all data flows directly peer-to-peer.</p>
 
     <h2>5. Ephemeral Stories</h2>
     <p>The app allows you to create and share 24-hour "Stories" using your camera and media storage. Story media files are saved securely in your device's temporary cache directory and are <strong>automatically deleted</strong> after 24 hours or when the app clears its cache. We do not upload your stories to any cloud server.</p>
 
-    <h2>6. User-Generated Content (UGC)</h2>
-    <p>The Entertainment section displays memes and videos sourced from public Reddit feeds. We implement the following safety measures:</p>
+    <h2>6. Utility Tools</h2>
+    <p>FileShare Pro includes built-in utility tools that process data entirely on your device:</p>
     <ul>
-        <li><strong>NSFW Filtering:</strong> All content is automatically filtered using keyword-based and subreddit-based NSFW detection. Content flagged as NSFW or containing adult keywords is blocked.</li>
-        <li><strong>Report Feature:</strong> Users can report inappropriate content directly from the feed.</li>
-        <li><strong>Block Feature:</strong> Users can block specific content authors to hide all their future posts.</li>
+        <li><strong>Image to PDF Converter:</strong> Converts selected images into a PDF file. All processing happens locally on your device. Images and generated PDFs are not uploaded to any server.</li>
+        <li><strong>Image Resizer:</strong> Resizes and compresses images locally on your device. No images are transmitted externally.</li>
+        <li><strong>BP Checker:</strong> Allows you to manually enter blood pressure readings for informational analysis. Readings are stored locally using SharedPreferences. <strong>This tool is NOT a medical device</strong> and should not be used as a substitute for professional medical advice.</li>
+        <li><strong>PDF Maker:</strong> Creates PDF documents from text input. All text processing and PDF generation happens locally on your device.</li>
     </ul>
 
     <div class="warning">
-        <strong>Content Disclaimer:</strong> We do not create, host, or endorse any user-generated content shown in the feed. All content is sourced from public APIs and is filtered for safety. If you encounter objectionable material, please use the in-app report feature.
+        <strong>Health Disclaimer:</strong> The BP Checker tool is for informational and educational purposes only. It is NOT a medical device, does NOT measure blood pressure, and should NOT be used as a substitute for professional medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional for medical concerns.
     </div>
 
-    <h2>6. WhatsApp Status Saver</h2>
+    <h2>7. WhatsApp Status Saver</h2>
     <p>The Status Saver feature accesses locally stored WhatsApp status files from your device's storage using Android's Storage Access Framework (SAF). Specifically:</p>
     <ul>
         <li>It reads files from the <code>.Statuses</code> folder on your device only.</li>
@@ -130,34 +132,35 @@
         <li>This feature only works with content already downloaded to your device by WhatsApp.</li>
     </ul>
 
-    <h2>7. Data Security</h2>
+    <h2>8. Data Security</h2>
     <ul>
         <li><strong>Vault Encryption:</strong> Files stored in the vault are encrypted using AES-256-CBC with PBKDF2 key derivation (100,000 iterations).</li>
         <li><strong>Transfer Encryption:</strong> Optional PIN-based encryption for file transfers using the same AES-256 standard.</li>
-        <li><strong>Local Storage:</strong> All app data (settings, history, chat) is stored locally on your device using SharedPreferences and on-device file storage.</li>
+        <li><strong>Local Storage:</strong> All app data (settings, history, chat, tool outputs) is stored locally on your device using SharedPreferences and on-device file storage.</li>
         <li><strong>No Cloud Backup:</strong> We do not backup your data to any cloud service.</li>
     </ul>
 
-    <h2>8. Data Retention & Deletion</h2>
+    <h2>9. Data Retention & Deletion</h2>
     <p>Since all data is stored locally on your device:</p>
     <ul>
         <li>Uninstalling the app removes all app data except vault files stored in public Documents storage (these persist for your security).</li>
         <li>You can manually clear all app data from Settings → Clear All Local Data.</li>
         <li>You can clear the vault from Settings → Clear Vault.</li>
+        <li>BP history can be cleared from within the BP Checker tool.</li>
     </ul>
 
-    <h2>9. Children's Privacy</h2>
-    <p>FileShare Pro is not directed at children under the age of 13. We do not knowingly collect personal information from children. The entertainment feed implements NSFW filtering to prevent exposure to inappropriate content.</p>
+    <h2>10. Children's Privacy</h2>
+    <p>FileShare Pro is not directed at children under the age of 13. We do not knowingly collect personal information from children.</p>
 
-    <h2>10. Video Downloading</h2>
+    <h2>11. Video Downloading</h2>
     <div class="highlight">
-        <strong>Important:</strong> FileShare Pro does <strong>not</strong> include any video downloading functionality from YouTube, Instagram, TikTok, or any other third-party platform. The app is strictly a peer-to-peer file sharing tool with local encryption capabilities.
+        <strong>Important:</strong> FileShare Pro does <strong>not</strong> include any video downloading functionality from YouTube, Instagram, TikTok, or any other third-party platform. The app is strictly a peer-to-peer file sharing tool with local encryption and utility tool capabilities.
     </div>
 
-    <h2>11. Changes to This Policy</h2>
+    <h2>12. Changes to This Policy</h2>
     <p>We may update this Privacy Policy from time to time. Any changes will be reflected on this page with an updated "Last updated" date. We encourage you to review this policy periodically.</p>
 
-    <h2>12. Contact Us</h2>
+    <h2>13. Contact Us</h2>
     <p>If you have any questions about this Privacy Policy or the app's data practices, please contact us at:</p>
     <p>📧 <a href="mailto:filesharepro.support@gmail.com">filesharepro.support@gmail.com</a></p>
 

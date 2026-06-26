@@ -1,17 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nearby_connections/nearby_connections.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
-import '../../../core/widgets/gradient_button.dart';
-import '../models/contact_model.dart';
-import '../models/user_profile.dart';
+import '../../../core/services/local_network_service.dart';
 import '../providers/chat_provider.dart';
-import '../../../core/utils/permission_utils.dart';
+import 'chat_room_screen.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -22,14 +16,10 @@ class DiscoveryScreen extends ConsumerStatefulWidget {
 
 class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
     with SingleTickerProviderStateMixin {
-  final Strategy strategy = Strategy.P2P_STAR;
-  bool _isDiscovering = false;
-  bool _isAdvertising = false;
   
-  // endpointId -> name
-  final Map<String, String> _discoveredEndpoints = {};
-  
+  List<LocalDevice> _discoveredDevices = [];
   late AnimationController _pulseController;
+  bool _isConnecting = false;
 
   @override
   void initState() {
@@ -38,149 +28,33 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: false);
-    _requestPermissions();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startDiscovery();
+    });
+  }
+
+  void _startDiscovery() {
+    final network = ref.read(localNetworkServiceProvider);
+    final profile = ref.read(myProfileProvider);
+    if (profile == null) return;
+
+    network.onDevicesChanged = (devices) {
+      if (mounted) {
+        setState(() {
+          _discoveredDevices = devices;
+        });
+      }
+    };
+    network.startDiscovery(profile);
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _stopDiscoveryAndAdvertising();
+    final network = ref.read(localNetworkServiceProvider);
+    network.stopDiscovery();
     super.dispose();
-  }
-
-  Future<void> _requestPermissions() async {
-    final hasPerm = await PermissionUtils.requestNearbyPermissions(context);
-    if (!hasPerm && mounted) {
-      _showSnackBar('Location permission is required for Radar', isError: true);
-      return;
-    }
-    
-    // Request additional Bluetooth permissions required by nearby_connections package
-    await [
-      Permission.bluetooth,
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-      Permission.bluetoothScan,
-    ].request();
-  }
-
-  Future<void> _stopDiscoveryAndAdvertising() async {
-    await Nearby().stopDiscovery();
-    await Nearby().stopAdvertising();
-    await Nearby().stopAllEndpoints();
-    setState(() {
-      _isDiscovering = false;
-      _isAdvertising = false;
-      _discoveredEndpoints.clear();
-    });
-  }
-
-  Future<void> _startAdvertising() async {
-    final profile = ref.read(myProfileProvider);
-    final name = profile?.displayName ?? 'Unknown User';
-    
-    try {
-      final success = await Nearby().startAdvertising(
-        name,
-        strategy,
-        onConnectionInitiated: _onConnectionInit,
-        onConnectionResult: (id, status) {
-          if (status == Status.CONNECTED) {
-            _exchangeProfileData(id);
-          }
-        },
-        onDisconnected: (id) {},
-      );
-      
-      if (success) {
-        setState(() => _isAdvertising = true);
-        _showSnackBar('Visible to nearby users');
-      }
-    } catch (e) {
-      _showSnackBar('Failed to advertise: $e', isError: true);
-    }
-  }
-
-  Future<void> _startDiscovery() async {
-    try {
-      final success = await Nearby().startDiscovery(
-        'filesharepro',
-        strategy,
-        onEndpointFound: (id, name, serviceId) {
-          final blocked = ref.read(blockedUsersProvider);
-          if (blocked.contains(name)) return;
-          
-          setState(() {
-            _discoveredEndpoints[id] = name;
-          });
-          HapticFeedback.lightImpact();
-        },
-        onEndpointLost: (id) {
-          setState(() {
-            _discoveredEndpoints.remove(id);
-          });
-        },
-      );
-      
-      if (success) {
-        setState(() => _isDiscovering = true);
-      }
-    } catch (e) {
-      _showSnackBar('Failed to start discovery: $e', isError: true);
-    }
-  }
-
-  void _onConnectionInit(String id, ConnectionInfo info) {
-    final blocked = ref.read(blockedUsersProvider);
-    if (blocked.contains(info.endpointName)) {
-       Nearby().rejectConnection(id);
-       return;
-    }
-
-    // Auto-accept connection for pairing
-    Nearby().acceptConnection(
-      id,
-      onPayLoadRecieved: (endpointId, payload) {
-        if (payload.type == PayloadType.BYTES) {
-          final str = String.fromCharCodes(payload.bytes!);
-          _handleReceivedProfile(str);
-        }
-      },
-      onPayloadTransferUpdate: (endpointId, payloadTransferUpdate) {},
-    );
-  }
-
-  Future<void> _exchangeProfileData(String endpointId) async {
-    final profile = ref.read(myProfileProvider);
-    if (profile == null) return;
-    
-    final data = json.encode(profile.toJson());
-    await Nearby().sendBytesPayload(endpointId, Uint8List.fromList(data.codeUnits));
-    _showSnackBar('Paired successfully!');
-  }
-
-  void _handleReceivedProfile(String jsonStr) {
-    try {
-      final Map<String, dynamic> data = json.decode(jsonStr);
-      final profile = UserProfile.fromJson(data);
-      
-      final contact = AppContact(
-        id: profile.uniqueId,
-        displayName: profile.displayName,
-        phoneNumber: '', // Local app users might not share phone numbers directly
-        deviceId: profile.uniqueId, // Using profile ID as device ID for now
-      );
-      
-      ref.read(contactsServiceProvider).savePairedContact(contact);
-      
-      // Refresh contacts list provider if exists
-      // ref.invalidate(pairedContactsProvider);
-      
-      _showSnackBar('Added ${profile.displayName} to contacts!', isError: false);
-      HapticFeedback.heavyImpact();
-    } catch (e) {
-      _showSnackBar('Failed to read profile data', isError: true);
-    }
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -193,6 +67,29 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
     );
   }
 
+  Future<void> _connectToDevice(LocalDevice device) async {
+    if (_isConnecting) return;
+    setState(() => _isConnecting = true);
+
+    try {
+      final chatRooms = ref.read(chatRoomsProvider.notifier);
+      final success = await chatRooms.connectTo(device.ip, device.id, device.name);
+      
+      if (success && mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatRoomScreen(roomCode: device.id),
+          ),
+        );
+      } else {
+        _showSnackBar('Failed to connect to ${device.name}', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isConnecting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -200,7 +97,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text('Add Contact Radar', style: AppTypography.heading3),
+        title: Text('Nearby Wi-Fi Radar', style: AppTypography.heading3),
       ),
       body: Stack(
         children: [
@@ -218,20 +115,19 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      if (_isDiscovering || _isAdvertising)
-                        AnimatedBuilder(
-                          animation: _pulseController,
-                          builder: (context, child) {
-                            return Container(
-                              width: 100 + (_pulseController.value * 150),
-                              height: 100 + (_pulseController.value * 150),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.primaryCyan.withValues(alpha: 1 - _pulseController.value),
-                              ),
-                            );
-                          },
-                        ),
+                      AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (context, child) {
+                          return Container(
+                            width: 100 + (_pulseController.value * 150),
+                            height: 100 + (_pulseController.value * 150),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.primaryCyan.withValues(alpha: 1 - _pulseController.value),
+                            ),
+                          );
+                        },
+                      ),
                       Container(
                         width: 80,
                         height: 80,
@@ -239,7 +135,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
                           shape: BoxShape.circle,
                           gradient: AppColors.primaryGradient,
                         ),
-                        child: const Icon(Icons.radar_rounded, color: Colors.white, size: 40),
+                        child: const Icon(Icons.wifi_tethering_rounded, color: Colors.white, size: 40),
                       ),
                     ],
                   ),
@@ -247,50 +143,32 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
                 
                 const SizedBox(height: 30),
                 Text(
-                  _isDiscovering ? 'Scanning for nearby users...' : 
-                  _isAdvertising ? 'Visible to nearby users...' : 'Radar Inactive',
+                  'Scanning Local Network...',
                   style: AppTypography.bodyMedium,
                 ),
-                
-                const SizedBox(height: 20),
-                
-                // Action Buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    GradientButton(
-                      label: _isDiscovering ? 'Stop Scan' : 'Scan',
-                      icon: Icons.search_rounded,
-                      gradient: _isDiscovering ? const LinearGradient(colors: [AppColors.error, Colors.redAccent]) : AppColors.primaryGradient,
-                      onPressed: _isDiscovering ? _stopDiscoveryAndAdvertising : _startDiscovery,
-                    ),
-                    const SizedBox(width: 16),
-                    GradientButton(
-                      label: _isAdvertising ? 'Hide' : 'Be Visible',
-                      icon: Icons.visibility_rounded,
-                      gradient: _isAdvertising ? const LinearGradient(colors: [AppColors.error, Colors.redAccent]) : AppColors.receiveGradient,
-                      onPressed: _isAdvertising ? _stopDiscoveryAndAdvertising : _startAdvertising,
-                    ),
-                  ],
+                Text(
+                  'Make sure both devices are on the same Wi-Fi\nor connected via Mobile Hotspot.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.caption.copyWith(color: AppColors.textHint),
                 ),
                 
                 const SizedBox(height: 40),
                 
                 // Results List
                 Expanded(
-                  child: _discoveredEndpoints.isEmpty
+                  child: _discoveredDevices.isEmpty
                       ? Center(
                           child: Text(
-                            'No devices found yet.\nMake sure the other device is "Visible".',
+                            'No devices found yet.\nKeep this screen open on both phones.',
                             textAlign: TextAlign.center,
                             style: AppTypography.caption,
                           ),
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          itemCount: _discoveredEndpoints.length,
+                          itemCount: _discoveredDevices.length,
                           itemBuilder: (context, index) {
-                            final entry = _discoveredEndpoints.entries.elementAt(index);
+                            final device = _discoveredDevices[index];
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: GlassCard(
@@ -308,28 +186,24 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen>
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
-                                      child: Text(entry.value, style: AppTypography.heading4),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        Nearby().requestConnection(
-                                          'filesharepro',
-                                          entry.key,
-                                          onConnectionInitiated: _onConnectionInit,
-                                          onConnectionResult: (id, status) {
-                                            if (status == Status.CONNECTED) {
-                                              _exchangeProfileData(id);
-                                            }
-                                          },
-                                          onDisconnected: (id) {},
-                                        );
-                                      },
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: AppColors.primaryCyan.withValues(alpha: 0.1),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(device.name, style: AppTypography.heading4),
+                                          Text(device.ip, style: AppTypography.caption),
+                                        ],
                                       ),
-                                      child: const Text('Pair', style: TextStyle(color: AppColors.primaryCyan)),
                                     ),
+                                    _isConnecting
+                                        ? const CircularProgressIndicator(strokeWidth: 2)
+                                        : TextButton(
+                                            onPressed: () => _connectToDevice(device),
+                                            style: TextButton.styleFrom(
+                                              backgroundColor: AppColors.primaryCyan.withValues(alpha: 0.1),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                            ),
+                                            child: const Text('Connect', style: TextStyle(color: AppColors.primaryCyan)),
+                                          ),
                                   ],
                                 ),
                               ),

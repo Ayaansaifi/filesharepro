@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../chat/providers/chat_provider.dart';
-import '../../../core/widgets/consent_dialog.dart';
 import 'onboarding_screen.dart';
 import '../../../navigation/app_navigation.dart';
 import '../../profile/presentation/profile_setup_screen.dart';
@@ -50,39 +49,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
     _navigateAfterDelay();
   }
 
-  Future<void> _showConsentRequired() async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Consent required', style: AppTypography.heading4),
-        content: Text(
-          'FileShare Pro needs your acceptance of the Privacy Policy and Terms to run. '
-          'No personal data is sent to our servers.',
-          style: AppTypography.bodySmall,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Review again'),
-          ),
-        ],
-      ),
-    );
-    if (mounted) _navigateAfterDelay();
-  }
+
 
   Future<void> _navigateAfterDelay() async {
     await Future.delayed(const Duration(milliseconds: 2500));
     
     if (!mounted) return;
 
-    final accepted = await ConsentDialog.ensureAccepted(context);
-    if (!accepted) {
-      if (mounted) await _showConsentRequired();
-      return;
-    }
     if (!mounted) return;
 
     final prefs = ref.read(sharedPreferencesProvider);
@@ -94,6 +67,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with SingleTickerPr
       nextScreen = const OnboardingScreen();
     } else if (profile == null) {
       nextScreen = ProfileSetupScreen(
+        onComplete: (ctx) {
+          Navigator.pushReplacement(
+            ctx,
+            MaterialPageRoute(builder: (_) => const AppNavigation()),
+          );
+        },
+      );
+    } else if (!profile.isPhonePaired) {
+      // Legacy profile created before contacts/chat pairing existed.
+      // Send the user back through profile setup (name & avatar preserved)
+      // so they can register a phone number and become reachable by contacts.
+      nextScreen = ProfileSetupScreen(
+        existingProfile: profile,
         onComplete: (ctx) {
           Navigator.pushReplacement(
             ctx,

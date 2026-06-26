@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
+import '../../../core/utils/phone_utils.dart';
 import '../../chat/models/user_profile.dart';
 import '../../chat/providers/chat_provider.dart';
 
@@ -23,6 +25,8 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   late TextEditingController _nameController;
   late TextEditingController _aboutController;
+  late TextEditingController _phoneController;
+  late TextEditingController _countryCodeController;
   File? _avatarFile;
   bool _isLoading = false;
 
@@ -31,6 +35,20 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.existingProfile?.displayName ?? '');
     _aboutController = TextEditingController(text: widget.existingProfile?.about ?? 'Available');
+
+    // Pre-fill phone from existing profile (if any).
+    final existing = widget.existingProfile?.phoneNumber;
+    if (existing != null && existing.isNotEmpty && existing.length > 3) {
+      // Split into country code (first 1-3 digits) and the rest. We can't know
+      // the exact split, so default: keep a common default code and the full
+      // number in the main field for the user to review.
+      _countryCodeController = TextEditingController(text: '+${existing.substring(0, 2)}');
+      _phoneController = TextEditingController(text: existing.substring(2));
+    } else {
+      _countryCodeController = TextEditingController(text: '+91');
+      _phoneController = TextEditingController();
+    }
+
     if (widget.existingProfile?.avatarPath != null && !kIsWeb) {
       final file = File(widget.existingProfile!.avatarPath!);
       if (file.existsSync()) {
@@ -43,6 +61,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   void dispose() {
     _nameController.dispose();
     _aboutController.dispose();
+    _phoneController.dispose();
+    _countryCodeController.dispose();
     super.dispose();
   }
 
@@ -146,6 +166,20 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       return;
     }
 
+    // ── Phone number validation ──
+    // Build the full number: country code + national number.
+    final rawPhone = '${_countryCodeController.text.trim()}${_phoneController.text.trim()}';
+    final normalizedPhone = PhoneUtils.normalize(rawPhone);
+
+    // Phone is required for internet/contact pairing to work. We keep it
+    // optional in the model (for legacy migration) but the setup screen requires it.
+    if (!PhoneUtils.isValid(normalizedPhone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid phone number with country code')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -159,6 +193,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
       final profile = UserProfile(
         uniqueId: widget.existingProfile?.uniqueId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        phoneNumber: normalizedPhone,
         displayName: name,
         about: _aboutController.text.trim(),
         avatarPath: savedAvatarPath,
@@ -272,7 +307,70 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 60),
+                const SizedBox(height: 16),
+
+                // Phone Number Input (required for contacts/chat pairing)
+                GlassCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  borderRadius: 16,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_rounded, color: AppColors.primaryCyan),
+                      const SizedBox(width: 12),
+                      // Country code
+                      SizedBox(
+                        width: 64,
+                        child: TextField(
+                          controller: _countryCodeController,
+                          style: AppTypography.bodyMedium,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'[+\d]')),
+                          ],
+                          decoration: InputDecoration(
+                            hintText: '+91',
+                            hintStyle: AppTypography.bodyMedium.copyWith(color: AppColors.textHint),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 28,
+                        color: AppColors.glassBorder,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                      // National number
+                      Expanded(
+                        child: TextField(
+                          controller: _phoneController,
+                          style: AppTypography.bodyMedium,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'\d')),
+                          ],
+                          decoration: InputDecoration(
+                            hintText: 'Phone number',
+                            hintStyle: AppTypography.bodyMedium.copyWith(color: AppColors.textHint),
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    'Your phone number is your ID. Friends can chat with you by saving this number.',
+                    style: AppTypography.caption.copyWith(color: AppColors.textHint, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: 32),
 
                 // EULA / Terms of Service Agreement for UGC
                 Padding(

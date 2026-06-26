@@ -1,3 +1,2 @@
-export 'entertainment_ads_types.dart';
-export 'entertainment_ads_mobile.dart'
-    if (dart.library.html) 'entertainment_ads_web.dart';
+// This file is deprecated and no longer used.
+// The entertainment feature has been removed.

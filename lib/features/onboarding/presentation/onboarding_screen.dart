@@ -201,27 +201,36 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              color: data.color.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-              border: Border.all(color: data.color.withValues(alpha: 0.3), width: 2),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 160,
+                    height: 160,
+                    decoration: BoxDecoration(
+                      color: data.color.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: data.color.withValues(alpha: 0.3), width: 2),
+                    ),
+                    child: Icon(data.icon, size: 80, color: data.color),
+                  ),
+                  const SizedBox(height: 48),
+                  Text(
+                    data.title,
+                    style: AppTypography.heading1.copyWith(fontSize: 28),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    data.description,
+                    style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
-            child: Icon(data.icon, size: 80, color: data.color),
-          ),
-          const SizedBox(height: 48),
-          Text(
-            data.title,
-            style: AppTypography.heading1.copyWith(fontSize: 28),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            data.description,
-            style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

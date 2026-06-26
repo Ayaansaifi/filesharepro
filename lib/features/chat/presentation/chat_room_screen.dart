@@ -8,8 +8,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/app_animated_builder.dart';
-import '../../../features/ai/presentation/ai_reply_buttons.dart';
-import '../../../features/ai/presentation/ai_chat_bubble.dart';
 
 import '../providers/chat_provider.dart';
 import '../models/chat_message.dart';
@@ -37,10 +35,6 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
   bool _isRecording = false;
   String? _recordingPath;
   bool _showEmojiPanel = false;
-  bool _showAiPanel = false;
-
-  // Last received text message for AI reply suggestions
-  String _lastReceivedText = '';
 
   // Quick emoji reactions
   static const _quickEmojis = ['😂', '❤️', '👍', '🔥', '😍', '😮'];
@@ -87,13 +81,6 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
       if (prev != null && next.messages.length > prev.messages.length) {
         Future.delayed(
             const Duration(milliseconds: 100), () => _scrollToBottom());
-        // Track last received message for AI suggestions
-        final last = next.messages.last;
-        if (last.direction == MessageDirection.received &&
-            last.type == MessageType.text &&
-            last.textContent != null) {
-          if (mounted) setState(() => _lastReceivedText = last.textContent!);
-        }
       }
     });
 
@@ -113,18 +100,9 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
               // ─── Sending Progress ───────────────────
               if (chatState.isSending) _buildSendingProgress(chatState),
 
-              // ─── AI Reply Suggestions ───────────────
-              if (_lastReceivedText.isNotEmpty && !_showAiPanel)
-                AiReplyButtons(
-                  lastReceivedMessage: _lastReceivedText,
-                  onReplySelected: (reply) {
-                    _textController.text = reply;
-                    _sendMessage();
-                  },
-                ),
-
-              // ─── AI Full Chat Panel ─────────────────
-              if (_showAiPanel) const AiChatPanel(),
+              // ─── Reply Preview Bar ──────────────────
+              if (chatState.replyToMessage != null)
+                _buildReplyPreviewBar(chatState.replyToMessage!),
 
               // ─── Emoji Panel ────────────────────────
               if (_showEmojiPanel) _buildEmojiPanel(),
@@ -155,7 +133,10 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              ref.read(activeChatProvider.notifier).clearSelection();
+              Navigator.pop(context);
+            },
           ),
           // Avatar with online indicator
           Stack(
@@ -192,12 +173,14 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Room: ${widget.roomCode}',
+                Text(
+                  (chatState.peerName != null && chatState.peerName!.isNotEmpty)
+                      ? chatState.peerName!
+                      : widget.roomCode,
                     style: AppTypography.labelLarge.copyWith(fontSize: 15)),
                 Row(
                   children: [
                     if (chatState.isTyping)
-                      // Typing animation dots
                       Row(
                         children: List.generate(3, (i) {
                           return AppAnimatedBuilder(
@@ -225,9 +208,9 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
                       )
                     else
                       Text(
-                        chatState.isConnected ? 'Online' : 'Offline',
+                        _getStatusText(chatState),
                         style: AppTypography.caption.copyWith(
-                          color: chatState.isConnected
+                          color: chatState.isPeerOnline
                               ? AppColors.success
                               : AppColors.textHint,
                           fontSize: 12,
@@ -249,20 +232,6 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
               ],
             ),
           ),
-          // AI Assistant toggle button
-          GlassCard(
-            padding: const EdgeInsets.all(8),
-            borderRadius: 12,
-            onTap: () => setState(() => _showAiPanel = !_showAiPanel),
-            child: Icon(
-              Icons.auto_awesome,
-              color: _showAiPanel
-                  ? AppColors.primaryPurple
-                  : AppColors.textSecondary,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 4),
           // Copy room code
           GlassCard(
             padding: const EdgeInsets.all(8),
@@ -297,6 +266,8 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
               itemBuilder: (context) => [
                 _popMenuItem('clear_chat', Icons.delete_sweep_rounded,
                     'Clear Chat', AppColors.textSecondary),
+                _popMenuItem('starred', Icons.star_rounded,
+                    'Starred Messages', const Color(0xFFFFC107)),
                 _popMenuItem('encryption', Icons.lock_rounded,
                     'Encryption: On', AppColors.success),
                 _popMenuItem('report', Icons.report_problem_rounded,
@@ -309,6 +280,12 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
         ],
       ),
     );
+  }
+
+  String _getStatusText(ActiveChatState chatState) {
+    if (chatState.isPeerOnline) return 'Online';
+    if (chatState.isConnected) return 'Online';
+    return 'Offline';
   }
 
   PopupMenuEntry<String> _popMenuItem(
@@ -327,6 +304,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
   }
 
   Future<void> _handleMenuAction(String action) async {
+    final notifier = ref.read(activeChatProvider.notifier);
     switch (action) {
       case 'clear_chat':
         final confirm = await _showConfirmDialog(
@@ -334,9 +312,13 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
           'All messages will be deleted locally. This cannot be undone.',
         );
         if (confirm == true && mounted) {
-          ref.read(activeChatProvider.notifier).clearChat();
+          notifier.clearChat();
           _showSnackBar('Chat cleared');
         }
+        break;
+
+      case 'starred':
+        _showSnackBar('Starred messages feature — tap ⭐ on any message to star it');
         break;
 
       case 'encryption':
@@ -434,9 +416,15 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
                 message.timestamp, chatState.messages[index - 1].timestamp);
 
         Widget bubble;
+        final isSelected = chatState.selectedMessageId == message.id;
         switch (message.type) {
           case MessageType.text:
-            bubble = TextBubble(message: message);
+          case MessageType.deleted:
+            bubble = TextBubble(
+              message: message,
+              isSelected: isSelected,
+              onLongPress: () => _showMessageOptions(context, message),
+            );
             break;
           case MessageType.voice:
             bubble = VoiceBubble(message: message);
@@ -478,6 +466,168 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
           ),
           child: Text(label, style: AppTypography.caption.copyWith(fontSize: 11)),
         ),
+      ),
+    );
+  }
+
+  /// WhatsApp-style bottom sheet with message actions
+  void _showMessageOptions(BuildContext context, ChatMessage message) {
+    final notifier = ref.read(activeChatProvider.notifier);
+    notifier.setSelectedMessage(message.id);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              // Message preview
+              if (message.textContent != null)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    message.textContent!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall.copyWith(color: AppColors.textPrimary),
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.reply_rounded, color: AppColors.primaryCyan),
+                title: const Text('Reply'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  notifier.setReplyTo(message);
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  message.isStarred ? Icons.star_rounded : Icons.star_border_rounded,
+                  color: const Color(0xFFFFC107),
+                ),
+                title: Text(message.isStarred ? 'Unstar' : 'Star'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  notifier.toggleStarMessage(message.id);
+                },
+              ),
+              if (message.textContent != null)
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded, color: AppColors.textSecondary),
+                  title: const Text('Copy'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Clipboard.setData(ClipboardData(text: message.textContent!));
+                    _showSnackBar('Message copied');
+                    notifier.clearSelection();
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.shortcut_rounded, color: AppColors.textSecondary),
+                title: const Text('Forward'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  notifier.forwardMessage(message);
+                  _showSnackBar('Message forwarded');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                title: const Text('Delete for Me'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await notifier.deleteMessageForMe(message.id);
+                  _showSnackBar('Message deleted for you');
+                },
+              ),
+              if (message.direction == MessageDirection.sent && !message.isDeleted)
+                ListTile(
+                  leading: const Icon(Icons.delete_forever_rounded, color: AppColors.error),
+                  title: const Text('Delete for Everyone'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await notifier.deleteMessageForEveryone(message.id);
+                    _showSnackBar('Message deleted for everyone');
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    ).then((_) {
+      // Clear selection when sheet closes
+      if (mounted) notifier.clearSelection();
+    });
+  }
+
+  Widget _buildReplyPreviewBar(ChatMessage repliedTo) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          top: BorderSide(color: AppColors.glassBorder, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primaryCyan,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  repliedTo.replyToSender ?? 'Replying to message',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.primaryCyan,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  repliedTo.textContent ??
+                      repliedTo.fileName ??
+                      'Message',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textHint),
+            onPressed: () {
+              ref.read(activeChatProvider.notifier).setReplyTo(null);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -700,7 +850,19 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen>
     if (text.isEmpty) return;
 
     final notifier = ref.read(activeChatProvider.notifier);
-    notifier.sendTextMessage(text);
+    final replyTo = ref.read(activeChatProvider).replyToMessage;
+
+    if (replyTo != null) {
+      notifier.sendTextMessage(
+        text,
+        replyToId: replyTo.id,
+        replyToText: replyTo.textContent ?? replyTo.fileName ?? 'Message',
+        replyToSender: 'You',
+      );
+      notifier.setReplyTo(null);
+    } else {
+      notifier.sendTextMessage(text);
+    }
     notifier.sendTypingStatus(false);
     _textController.clear();
     setState(() {});

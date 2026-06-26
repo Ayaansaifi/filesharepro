@@ -55,6 +55,21 @@ class ChatEncryptionService {
     return base64Encode(digest.bytes);
   }
 
+  /// Deterministic E2E key derived from BOTH peer ids so the caller and the
+  /// callee independently arrive at the SAME key without any key exchange.
+  ///
+  /// This is required because the two sides see the room from opposite
+  /// perspectives: the caller only knows the callee's id, and the callee only
+  /// knows the caller's id (recovered from the incoming WebRTC offer). Deriving
+  /// from a single id would therefore yield two different keys. By sorting the
+  /// pair, the order in which the ids are supplied doesn't matter.
+  static String deriveSessionKeyForPeers(String idA, String idB) {
+    final sorted = [idA, idB]..sort();
+    final digest =
+        sha256.convert(utf8.encode('FileSharePro_E2E_v2_${sorted[0]}|${sorted[1]}'));
+    return base64Encode(digest.bytes);
+  }
+
   /// Hash a phone number for privacy-preserving contact matching
   static String hashPhoneNumber(String phone) {
     // Remove all non-numeric characters except +

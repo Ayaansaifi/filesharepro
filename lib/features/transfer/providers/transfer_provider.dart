@@ -1,10 +1,16 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/transfer_manager.dart';
-import '../services/nearby_service.dart';
+import '../../../core/services/local_network_service.dart';
+import '../../chat/providers/chat_provider.dart';
 
+/// TransferManager now uses the SHARED LocalNetworkService instance
+/// (same as ChatService) so there is NO port conflict between
+/// file-sharing and chat features.
 final transferManagerProvider = Provider<TransferManager>((ref) {
-  final manager = TransferManager();
+  // Reuse the single shared network service from chat_provider
+  final networkService = ref.watch(localNetworkServiceProvider);
+  final manager = TransferManager(sharedNetworkService: networkService);
   ref.onDispose(() => manager.dispose());
   return manager;
 });
@@ -64,8 +70,8 @@ class TransferStateNotifier extends StateNotifier<TransferUiState> {
     _syncState();
   }
 
-  Future<void> startNearbyReceive(String address) async {
-    await _manager.startNearbyReceive(address);
+  Future<void> connectAndSend(LocalDevice device) async {
+    await _manager.connectAndSend(device);
     _syncState();
   }
 
@@ -110,7 +116,7 @@ class TransferUiState {
   final int filesSent;
   final int totalFiles;
   final bool encryptionEnabled;
-  final List<NearbyDevice> discoveredDevices;
+  final List<LocalDevice> discoveredDevices;
 
   const TransferUiState({
     required this.mode,
@@ -143,15 +149,15 @@ class TransferUiState {
 }
 
 final nearbyDevicesProvider =
-    StateNotifierProvider<NearbyDevicesNotifier, List<NearbyDevice>>((ref) {
+    StateNotifierProvider<NearbyDevicesNotifier, List<LocalDevice>>((ref) {
   return NearbyDevicesNotifier();
 });
 
-class NearbyDevicesNotifier extends StateNotifier<List<NearbyDevice>> {
+class NearbyDevicesNotifier extends StateNotifier<List<LocalDevice>> {
   NearbyDevicesNotifier() : super([]);
 
-  void addDevice(NearbyDevice device) {
-    if (!state.any((d) => d.address == device.address)) {
+  void addDevice(LocalDevice device) {
+    if (!state.any((d) => d.id == device.id)) {
       state = [...state, device];
     }
   }

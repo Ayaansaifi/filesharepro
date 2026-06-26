@@ -15,8 +15,6 @@ import 'package:share_plus/share_plus.dart';
 import '../../vault/services/vault_service.dart';
 import '../../status_saver/providers/status_provider.dart';
 import '../../transfer/presentation/widgets/pin_input_dialog.dart';
-import '../../../core/services/transfer_history_service.dart';
-
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -199,7 +197,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (confirm != true) return;
 
-    await TransferHistoryService().clear();
+    // TransferHistoryService removed
     final prefs = await SharedPreferences.getInstance();
     final vaultPin = prefs.getString(AppConstants.keyVaultPinHash);
     final vaultSalt = prefs.getString(AppConstants.keyVaultSalt);

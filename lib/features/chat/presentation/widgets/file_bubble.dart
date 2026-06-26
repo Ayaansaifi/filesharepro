@@ -8,7 +8,7 @@ import '../../../../core/utils/file_utils.dart';
 import '../../models/chat_message.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../../../features/ai/presentation/ai_file_insight_card.dart';
+
 
 /// WhatsApp-style file message bubble
 class FileBubble extends StatelessWidget {
@@ -151,14 +151,14 @@ class FileBubble extends StatelessWidget {
                     ),
                   ),
 
-                  // AI File Insight (only for received files)
-                  if (!isSent &&
-                      message.fileName != null &&
-                      message.fileSize != null)
-                    AiFileInsightCard(
-                      fileName: message.fileName!,
-                      fileSizeBytes: message.fileSize!,
-                    ),
+                  // AI File Insight (only for received files) - Placeholder
+                  // if (!isSent &&
+                  //     message.fileName != null &&
+                  //     message.fileSize != null)
+                  //   AiFileInsightCard(
+                  //     fileName: message.fileName!,
+                  //     fileSizeBytes: message.fileSize!,
+                  //   ),
                 ],
               ),
             ),
